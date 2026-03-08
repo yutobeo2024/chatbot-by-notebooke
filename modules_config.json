@@ -1,0 +1,39 @@
+{
+  "modules": {
+    "reception": {
+      "name": "Lễ Tân",
+      "description": "Hỏi đáp quy trình, viện phí, bảo hiểm",
+      "notebook_id": "8012aef4-3ab8-4624-a678-62f61415dd96"
+    },
+    "internal_medicine": {
+      "name": "Khoa Nội",
+      "description": "Tư vấn nội khoa",
+      "notebook_id": "INTERNAL_MEDICINE_NOTEBOOK_ID_HERE"
+    },
+    "surgery": {
+      "name": "Khoa Ngoại",
+      "description": "Tư vấn ngoại khoa",
+      "notebook_id": "SURGERY_NOTEBOOK_ID_HERE"
+    },
+    "ophthalmology": {
+      "name": "Khoa Mắt",
+      "description": "Khám mắt và thị lực",
+      "notebook_id": "OPHTHALMOLOGY_NOTEBOOK_ID_HERE"
+    },
+    "obstetrics": {
+      "name": "Sản Khoa",
+      "description": "Chăm sóc sức khỏe phụ nữ và thai sản",
+      "notebook_id": "OBSTETRICS_NOTEBOOK_ID_HERE"
+    },
+    "dentistry": {
+      "name": "Nha Khoa",
+      "description": "Chăm sóc răng miệng",
+      "notebook_id": "DENTISTRY_NOTEBOOK_ID_HERE"
+    },
+    "physical_exam": {
+      "name": "Khám Sức Khỏe",
+      "description": "Quy định công ty, gói khám sức khỏe tổng quát",
+      "notebook_id": "8d54ff74-213f-4747-ae3e-2ab8897d3a2c"
+    }
+  }
+}
