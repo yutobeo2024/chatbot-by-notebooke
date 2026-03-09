@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import subprocess
@@ -100,6 +100,27 @@ async def reauth_notebooklm(user=Depends(verify_firebase_token)):
             return {"status": "error", "message": "Lỗi xác thực NotebookLM:\n" + process.stderr}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi chạy lệnh xác thực: {str(e)}")
+
+@app.post("/api/admin/upload-auth")
+async def upload_auth_file(file: UploadFile = File(...), user=Depends(verify_firebase_token)):
+    """Upload auth.json file to update NotebookLM authentication credentials."""
+    if not file.filename.endswith('.json'):
+        raise HTTPException(status_code=400, detail="Chỉ chấp nhận file .json")
+    try:
+        contents = await file.read()
+        # Validate JSON structure
+        json.loads(contents)
+        # Save to the correct path
+        auth_dir = os.path.expanduser("~/.notebooklm-mcp")
+        os.makedirs(auth_dir, exist_ok=True)
+        auth_path = os.path.join(auth_dir, "auth.json")
+        with open(auth_path, "wb") as f:
+            f.write(contents)
+        return {"status": "success", "message": "✅ File auth.json đã được cập nhật thành công! NotebookLM sẽ sử dụng thông tin đăng nhập mới từ bây giờ."}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="File không phải JSON hợp lệ. Hãy chắc chắn bạn chọn đúng file auth.json.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Lỗi khi lưu file: {str(e)}")
 
 
 # In-memory session store: { "module_id": "conversation_id" }

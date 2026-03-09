@@ -65,6 +65,9 @@ function App() {
   const [loginPassword, setLoginPassword] = useState('')
   const [newConfigs, setNewConfigs] = useState({})
   const [isReauthing, setIsReauthing] = useState(false)
+  const [isUploadingAuth, setIsUploadingAuth] = useState(false)
+  const [authUploadMsg, setAuthUploadMsg] = useState('')
+  const authFileRef = useRef(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8042'
   const messagesEndRef = useRef(null)
@@ -165,6 +168,35 @@ function App() {
       alert('Lỗi kết nối server khi xác thực lại')
     } finally {
       setIsReauthing(false)
+    }
+  }
+
+  const handleAuthUpload = async (e) => {
+    const file = e.target.files[0]
+    if (!file || !user) return
+    setIsUploadingAuth(true)
+    setAuthUploadMsg('')
+    try {
+      const idToken = await user.getIdToken()
+      const formData = new FormData()
+      formData.append('file', file)
+      const response = await fetch(`${API_URL}/api/admin/upload-auth`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}` },
+        body: formData
+      })
+      const data = await response.json()
+      if (response.ok) {
+        setAuthUploadMsg(data.message)
+      } else {
+        setAuthUploadMsg('❌ Lỗi: ' + (data.detail || data.message))
+      }
+    } catch (err) {
+      setAuthUploadMsg('❌ Lỗi kết nối server')
+    } finally {
+      setIsUploadingAuth(false)
+      // Reset file input so same file can be re-uploaded
+      if (authFileRef.current) authFileRef.current.value = ''
     }
   }
 
@@ -321,9 +353,29 @@ function App() {
                 <button onClick={handleReauth} disabled={isReauthing} className="save-btn" style={{ marginRight: '10px', backgroundColor: '#e2e8f0', color: '#1e293b' }}>
                   {isReauthing ? 'Đang kết nối...' : 'Kết nối lại NotebookLM'}
                 </button>
+                <input
+                  type="file"
+                  accept=".json"
+                  ref={authFileRef}
+                  style={{ display: 'none' }}
+                  onChange={handleAuthUpload}
+                />
+                <button
+                  onClick={() => authFileRef.current?.click()}
+                  disabled={isUploadingAuth}
+                  className="save-btn"
+                  style={{ marginRight: '10px', backgroundColor: '#d1fae5', color: '#065f46' }}
+                >
+                  {isUploadingAuth ? 'Đang upload...' : '📂 Upload auth.json'}
+                </button>
                 <button onClick={handleUpdateConfig} className="save-btn">Lưu thay đổi</button>
               </div>
             </div>
+            {authUploadMsg && (
+              <div style={{ padding: '8px 16px', margin: '0 16px', borderRadius: '8px', backgroundColor: authUploadMsg.startsWith('❌') ? '#fee2e2' : '#d1fae5', color: authUploadMsg.startsWith('❌') ? '#991b1b' : '#065f46', fontSize: '14px' }}>
+                {authUploadMsg}
+              </div>
+            )}
             <div className="admin-content">
               {Object.entries(newConfigs).map(([id, config]) => (
                 <div key={id} className="admin-card">
@@ -389,7 +441,7 @@ function App() {
           </>
         )}
       </div>
-    </div>
+    </div >
   )
 }
 
