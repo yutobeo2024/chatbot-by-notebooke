@@ -66,6 +66,7 @@ function App() {
   const [newConfigs, setNewConfigs] = useState({})
   const [isReauthing, setIsReauthing] = useState(false)
 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8042'
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -84,7 +85,7 @@ function App() {
   }, [])
 
   const fetchModules = () => {
-    fetch('http://localhost:8042/api/modules')
+    fetch(`${API_URL}/api/modules`)
       .then(res => res.json())
       .then(data => {
         setModules(data)
@@ -121,7 +122,7 @@ function App() {
     const idToken = await user.getIdToken()
 
     try {
-      const response = await fetch('http://localhost:8042/api/admin/modules', {
+      const response = await fetch(`${API_URL}/api/admin/modules`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -147,7 +148,7 @@ function App() {
     setIsReauthing(true)
 
     try {
-      const response = await fetch('http://localhost:8042/api/admin/reauth', {
+      const response = await fetch(`${API_URL}/api/admin/reauth`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -178,7 +179,7 @@ function App() {
     setIsLoading(true)
 
     try {
-      const response = await fetch('http://localhost:8042/api/chat', {
+      const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
