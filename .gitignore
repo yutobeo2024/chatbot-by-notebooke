@@ -1,0 +1,13 @@
+
+__pycache__/
+*.pyc
+stdout.txt
+stderr.txt
+notebooks_list.txt
+temp_config.json
+update_opencode.py
+firebase-adminsdk.json
+.tmp/
+node_modules/
+frontend/node_modules/
+.env
