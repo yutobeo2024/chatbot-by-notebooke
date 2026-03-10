@@ -300,17 +300,23 @@ async def get_browser_logs(user: dict = Depends(verify_firebase_token)):
     return {"logs": browser_manager.get_logs()}
 
 @app.get("/api/admin/browser/screenshot")
-async def get_browser_screenshot(user: dict = Depends(verify_firebase_token)):
-    if not user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
+async def get_browser_screenshot(token: Optional[str] = None):
+    # Authenticate via query param token (same as VNC proxy)
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing token")
+    try:
+        decoded_token = auth.verify_id_token(token)
+        if decoded_token.get("email") != ADMIN_EMAIL:
+            raise HTTPException(status_code=403, detail="Admin access required")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     
     screenshot = await browser_manager.take_screenshot()
     if screenshot:
         return Response(content=screenshot, media_type="image/jpeg")
     else:
-        # Return logs if screenshot fails to help debug why
         logs = browser_manager.get_logs()
-        raise HTTPException(status_code=500, detail=f"Failed to capture screenshot. Logs:\n{logs[-500:]}")
+        raise HTTPException(status_code=500, detail=f"Không chụp được. Logs:\n{logs[-500:]}")
 
 @app.websocket("/api/admin/browser/ws")
 async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
