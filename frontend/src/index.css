@@ -454,3 +454,94 @@ body {
     padding: 15px;
   }
 }
+
+/* Auth & Whitelist Styles */
+.login-container {
+  padding: 20px;
+  text-align: center;
+}
+
+.login-container h2 {
+  margin-bottom: 20px;
+  color: var(--primary-color);
+}
+
+.toggle-auth-btn {
+  background: none;
+  border: none;
+  color: var(--secondary-color);
+  text-decoration: underline;
+  cursor: pointer;
+  margin-top: 15px;
+  font-size: 0.9rem;
+}
+
+.admin-section {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  margin: 20px 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.admin-section h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+  color: #1e293b;
+  border-bottom: 2px solid #f1f5f9;
+  padding-bottom: 10px;
+}
+
+.whitelist-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.add-whitelist {
+  display: flex;
+  gap: 10px;
+}
+
+.add-whitelist input {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.add-whitelist button {
+  padding: 10px 20px;
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.whitelist-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.whitelist-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 0.9rem;
+}
+
+.whitelist-list li button {
+  padding: 4px 8px;
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}

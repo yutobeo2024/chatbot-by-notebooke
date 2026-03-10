@@ -28,6 +28,7 @@ else:
     print("WARNING: firebase-adminsdk.json not found. Auth features will be limited.")
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "modules_config.json")
+WHITELIST_PATH = os.path.join(os.path.dirname(__file__), "whitelist.json")
 EXECUTION_SCRIPT = os.path.join(os.path.dirname(__file__), "execution", "notebooklm_query.py")
 
 class ChatRequest(BaseModel):
@@ -43,20 +44,20 @@ class ConfigUpdate(BaseModel):
     modules: dict[str, ModuleConfig]
 
 async def verify_firebase_token(authorization: Optional[str] = Header(None)):
-    # TEMPORARY FIX FOR LOCAL TESTING:
-    # Disable token verification since firebase-adminsdk.json is missing
-    # if not authorization or not authorization.startswith("Bearer "):
-    #     raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
     
-    # token = authorization.split("Bearer ")[1]
-    # try:
-    #     decoded_token = auth.verify_id_token(token)
-    #     return decoded_token
-    # except Exception as e:
-    #     raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-    
-    # Just return a dummy user object so the dependent functions don't crash
-    return {"uid": "local_test_user", "email": "admin@localhost"}
+    token = authorization.split("Bearer ")[1]
+    try:
+        # Use verify_id_token ONLY if firebase-adminsdk.json is present
+        if firebase_admin._apps:
+            decoded_token = auth.verify_id_token(token)
+            return decoded_token
+        else:
+            # Fallback for local testing if SDK is still missing
+            return {"uid": "local_test_user", "email": "admin@localhost"}
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -65,6 +66,16 @@ def load_config():
 def save_config(config):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2, ensure_ascii=False)
+
+def load_whitelist():
+    if not os.path.exists(WHITELIST_PATH):
+        return []
+    with open(WHITELIST_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def save_whitelist(emails):
+    with open(WHITELIST_PATH, "w", encoding="utf-8") as f:
+        json.dump(emails, f, indent=2, ensure_ascii=False)
 
 @app.get("/api/modules")
 async def get_modules():
@@ -101,6 +112,34 @@ async def reauth_notebooklm(user=Depends(verify_firebase_token)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi chạy lệnh xác thực: {str(e)}")
 
+@app.get("/api/admin/whitelist")
+async def get_whitelist(user=Depends(verify_firebase_token)):
+    return load_whitelist()
+
+@app.post("/api/admin/whitelist")
+async def add_to_whitelist(data: dict, user=Depends(verify_firebase_token)):
+    email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Thiếu email")
+    whitelist = load_whitelist()
+    if email not in whitelist:
+        whitelist.append(email)
+        save_whitelist(whitelist)
+    return {"status": "success", "message": f"Đã thêm {email} vào danh sách"}
+
+@app.delete("/api/admin/whitelist/{email}")
+async def remove_from_whitelist(email: str, user=Depends(verify_firebase_token)):
+    whitelist = load_whitelist()
+    if email in whitelist:
+        whitelist.remove(email)
+        save_whitelist(whitelist)
+    return {"status": "success", "message": f"Đã xóa {email} khỏi danh sách"}
+
+@app.get("/api/check-whitelist")
+async def check_whitelist(email: str):
+    whitelist = load_whitelist()
+    return {"allowed": email in whitelist}
+
 @app.post("/api/admin/upload-auth")
 async def upload_auth_file(file: UploadFile = File(...), user=Depends(verify_firebase_token)):
     """Upload auth.json file to update NotebookLM authentication credentials."""
@@ -134,23 +173,23 @@ async def get_auth_status(user=Depends(verify_firebase_token)):
     return {"exists": False, "last_updated": None}
 
 
-# In-memory session store: { "module_id": "conversation_id" }
-# Note: In a production app with multiple users, this should be { "user_id_module_id": "conversation_id" }
+# In-memory session store: { "user_id_module_id": "conversation_id" }
 conversation_map = {}
 
 from fastapi.responses import StreamingResponse
 import asyncio
 
 @app.post("/api/chat")
-async def chat(request: ChatRequest):
+async def chat(request: ChatRequest, user=Depends(verify_firebase_token)):
     config = load_config()
     if request.module_id not in config["modules"]:
         raise HTTPException(status_code=404, detail="Module not found")
     
     notebook_id = config["modules"][request.module_id]["notebook_id"]
     
-    # Get existing conversation ID or "NEW"
-    conversation_id = conversation_map.get(request.module_id, "NEW")
+    # Isolate conversation per user and per module
+    user_key = f"{user['uid']}_{request.module_id}"
+    conversation_id = conversation_map.get(user_key, "NEW")
     
     def generate_streaming_response():
         try:
@@ -176,9 +215,9 @@ async def chat(request: ChatRequest):
                 
                 try:
                     data = json.loads(line)
-                    # intercept meta to save conversation_id
+                    # intercept meta to save conversation_id per user
                     if data.get("type") == "meta" and data.get("conversation_id"):
-                        conversation_map[request.module_id] = data["conversation_id"]
+                        conversation_map[user_key] = data["conversation_id"]
                     
                     # Yield SSE formatted data
                     yield f"data: {json.dumps(data)}\n\n".encode("utf-8")

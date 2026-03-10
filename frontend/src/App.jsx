@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { auth } from './firebase'
 import {
   signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   onAuthStateChanged,
   signOut
 } from 'firebase/auth'
@@ -69,6 +70,9 @@ function App() {
   const [authUploadMsg, setAuthUploadMsg] = useState('')
   const [authStatus, setAuthStatus] = useState({ exists: false, last_updated: null })
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  const [isRegistering, setIsRegistering] = useState(false)
+  const [whitelist, setWhitelist] = useState([])
+  const [newWhitelistEmail, setNewWhitelistEmail] = useState('')
   const authFileRef = useRef(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8042'
@@ -87,6 +91,7 @@ function App() {
       setUser(currentUser)
       if (currentUser) {
         fetchAuthStatus()
+        fetchWhitelist()
       }
     })
     return () => unsubscribe()
@@ -124,6 +129,55 @@ function App() {
     }
   }
 
+  const fetchWhitelist = async () => {
+    if (!auth.currentUser) return
+    try {
+      const response = await fetch(`${API_URL}/api/admin/whitelist`, {
+        headers: {
+          'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+        }
+      })
+      const data = await response.json()
+      setWhitelist(data)
+    } catch (err) {
+      console.error('Failed to fetch whitelist', err)
+    }
+  }
+
+  const addToWhitelist = async () => {
+    if (!newWhitelistEmail.trim()) return
+    try {
+      const response = await fetch(`${API_URL}/api/admin/whitelist`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+        },
+        body: JSON.stringify({ email: newWhitelistEmail })
+      })
+      if (response.ok) {
+        setNewWhitelistEmail('')
+        fetchWhitelist()
+      }
+    } catch (err) {
+      console.error('Add whitelist failed', err)
+    }
+  }
+
+  const removeFromWhitelist = async (email) => {
+    try {
+      const response = await fetch(`${API_URL}/api/admin/whitelist/${encodeURIComponent(email)}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+        }
+      })
+      if (response.ok) fetchWhitelist()
+    } catch (err) {
+      console.error('Remove whitelist failed', err)
+    }
+  }
+
   const handleLogin = async (e) => {
     e.preventDefault()
     try {
@@ -132,6 +186,29 @@ function App() {
       setLoginPassword('')
     } catch (err) {
       alert('Đăng nhập thất bại: ' + err.message)
+    }
+  }
+
+  const handleRegister = async (e) => {
+    e.preventDefault()
+    try {
+      // 1. Check if email is in whitelist
+      const checkRes = await fetch(`${API_URL}/api/check-whitelist?email=${encodeURIComponent(loginEmail)}`)
+      const checkData = await checkRes.json()
+
+      if (!checkData.allowed) {
+        alert('Email này không nằm trong danh sách được phép đăng ký. Vui lòng liên hệ Admin!')
+        return
+      }
+
+      // 2. Perform Firebase registration
+      await createUserWithEmailAndPassword(auth, loginEmail, loginPassword)
+      alert('Đăng ký thành công!')
+      setLoginEmail('')
+      setLoginPassword('')
+      setIsRegistering(false)
+    } catch (err) {
+      alert('Đăng ký thất bại: ' + err.message)
     }
   }
 
@@ -232,9 +309,13 @@ function App() {
     setIsLoading(true)
 
     try {
+      const idToken = await auth.currentUser.getIdToken()
       const response = await fetch(`${API_URL}/api/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`
+        },
         body: JSON.stringify({
           module_id: activeModuleId,
           message: input
@@ -343,11 +424,25 @@ function App() {
               <button onClick={handleLogout} className="logout-link">Thoát</button>
             </div>
           ) : (
-            <form onSubmit={handleLogin} className="login-form">
-              <input type="email" placeholder="Email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} required />
-              <input type="password" placeholder="Pass" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} required />
-              <button type="submit">OK</button>
-            </form>
+            <div className="login-container">
+              <h2>{isRegistering ? 'Đăng ký tài khoản' : 'Đăng nhập'}</h2>
+              <form onSubmit={isRegistering ? handleRegister : handleLogin} className="login-form">
+                <input type="email" placeholder="Email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} required />
+                <input type="password" placeholder="Mật khẩu" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} required />
+                <button type="submit">{isRegistering ? 'Đăng ký' : 'Đăng nhập'}</button>
+              </form>
+              <button
+                onClick={() => setIsRegistering(!isRegistering)}
+                className="toggle-auth-btn"
+              >
+                {isRegistering ? 'Đã có tài khoản? Đăng nhập' : 'Chưa có tài khoản? Đăng ký'}
+              </button>
+              {!isRegistering && (
+                <p style={{ fontSize: '12px', color: '#64748b', marginTop: '10px' }}>
+                  * Chỉ email trong Whitelist mới có thể đăng ký.
+                </p>
+              )}
+            </div>
           )}
         </div>
 
@@ -411,23 +506,50 @@ function App() {
                 {authUploadMsg}
               </div>
             )}
-            <div className="admin-content">
-              {Object.entries(newConfigs).map(([id, config]) => (
-                <div key={id} className="admin-card">
-                  <h3>{config.name}</h3>
-                  <label>Notebook ID:</label>
+
+            <div className="admin-section">
+              <h3>Whitelist Người dùng</h3>
+              <div className="whitelist-manager">
+                <div className="add-whitelist">
                   <input
-                    type="text"
-                    value={config.notebook_id}
-                    onChange={(e) => {
-                      setNewConfigs({
-                        ...newConfigs,
-                        [id]: { ...config, notebook_id: e.target.value }
-                      })
-                    }}
+                    type="email"
+                    placeholder="Thêm email vào whitelist"
+                    value={newWhitelistEmail}
+                    onChange={e => setNewWhitelistEmail(e.target.value)}
                   />
+                  <button onClick={addToWhitelist}>Thêm</button>
                 </div>
-              ))}
+                <ul className="whitelist-list">
+                  {whitelist.map(email => (
+                    <li key={email}>
+                      {email}
+                      <button onClick={() => removeFromWhitelist(email)}>Xóa</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+
+            <div className="admin-section">
+              <h3>Cấu hình Module</h3>
+              <div className="admin-content">
+                {Object.entries(newConfigs).map(([id, config]) => (
+                  <div key={id} className="admin-card">
+                    <h3>{config.name}</h3>
+                    <label>Notebook ID:</label>
+                    <input
+                      type="text"
+                      value={config.notebook_id}
+                      onChange={(e) => {
+                        setNewConfigs({
+                          ...newConfigs,
+                          [id]: { ...config, notebook_id: e.target.value }
+                        })
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ) : (
