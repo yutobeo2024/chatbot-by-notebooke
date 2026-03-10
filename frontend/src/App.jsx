@@ -72,6 +72,9 @@ function App() {
   const [authStatus, setAuthStatus] = useState({ exists: false, last_updated: null })
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
+  const [showBrowser, setShowBrowser] = useState(false)
+  const [browserUrl, setBrowserUrl] = useState('')
+  const [isBrowserLoading, setIsBrowserLoading] = useState(false)
   const [whitelist, setWhitelist] = useState([])
   const [newWhitelistEmail, setNewWhitelistEmail] = useState('')
   const authFileRef = useRef(null)
@@ -205,6 +208,59 @@ function App() {
       }
     } catch (err) {
       setTestStatus({ state: 'error', message: 'Lỗi kết nối máy chủ.' })
+    }
+  }
+
+  const startRemoteBrowser = async () => {
+    setIsBrowserLoading(true)
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch(`${API_URL}/api/admin/browser/start`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        const hostname = window.location.hostname
+        setBrowserUrl(`http://${hostname}:${data.port}/vnc.html?autoconnect=true&resize=scale`)
+        setShowBrowser(true)
+      } else {
+        alert('Lỗi khởi động trình duyệt: ' + data.detail)
+      }
+    } catch (err) {
+      alert('Lỗi kết nối máy chủ.')
+    } finally {
+      setIsBrowserLoading(false)
+    }
+  }
+
+  const stopRemoteBrowser = async () => {
+    try {
+      const token = await user.getIdToken()
+      await fetch(`${API_URL}/api/admin/browser/stop`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      setShowBrowser(false)
+      setBrowserUrl('')
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const extractBrowserCookies = async () => {
+    setAuthUploadMsg('⏳ Đang lấy chìa khóa...')
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch(`${API_URL}/api/admin/browser/extract`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      setAuthUploadMsg(data.status === 'success' ? data.message : '❌ ' + data.message)
+      if (data.status === 'success') fetchAuthStatus()
+    } catch (err) {
+      setAuthUploadMsg('❌ Lỗi kết nối.')
     }
   }
 
@@ -518,6 +574,14 @@ function App() {
                 <button onClick={handleTestAuth} disabled={testStatus.state === 'testing'} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
                   {testStatus.state === 'testing' ? '⏳ Đang kiểm tra...' : '⚡ Kiểm tra kết nối'}
                 </button>
+                <button
+                  onClick={startRemoteBrowser}
+                  disabled={isBrowserLoading || showBrowser}
+                  className="save-btn"
+                  style={{ backgroundColor: '#eff6ff', color: '#1e40af' }}
+                >
+                  {isBrowserLoading ? '⏳ Đang mở...' : '🔐 Đăng nhập từ xa (Mobile)'}
+                </button>
                 <button onClick={handleReauth} disabled={isReauthing} className="save-btn" style={{ backgroundColor: '#e2e8f0', color: '#1e293b' }}>
                   {isReauthing ? 'Đang kết nối...' : 'Kết nối lại NotebookLM'}
                 </button>
@@ -547,6 +611,17 @@ function App() {
             {authUploadMsg && (
               <div style={{ padding: '8px 16px', margin: '0 16px', borderRadius: '8px', backgroundColor: authUploadMsg.startsWith('❌') ? '#fee2e2' : '#d1fae5', color: authUploadMsg.startsWith('❌') ? '#991b1b' : '#065f46', fontSize: '14px' }}>
                 {authUploadMsg}
+              </div>
+            )}
+
+            {showBrowser && (
+              <div className="browser-modal" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+                <div className="browser-toolbar" style={{ padding: '10px', backgroundColor: '#fff', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                  <button onClick={extractBrowserCookies} className="save-btn">🎯 Lấy chìa khóa</button>
+                  <button onClick={stopRemoteBrowser} className="save-btn" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Đóng trình duyệt</button>
+                  <span style={{ fontSize: '12px', color: '#64748b' }}>Đăng nhập Google xong hãy bấm "Lấy chìa khóa"</span>
+                </div>
+                <iframe src={browserUrl} style={{ flex: 1, border: 'none', width: '100%' }} title="Remote Browser"></iframe>
               </div>
             )}
 

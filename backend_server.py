@@ -10,6 +10,7 @@ from typing import Optional
 import asyncio
 from datetime import datetime
 from execution.notebooklm_query import get_client
+from remote_browser_manager import RemoteBrowserManager
 
 app = FastAPI(title="Clinic Assistant API")
 
@@ -254,6 +255,38 @@ async def heartbeat_task():
 async def startup_event():
     # Start heartbeat in background
     asyncio.create_task(heartbeat_task())
+
+# Browser instance manager
+browser_manager = RemoteBrowserManager()
+
+@app.post("/api/admin/browser/start")
+async def start_browser(user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        port = browser_manager.start()
+        # Return the noVNC URL. Assuming it's accessed via the same host
+        # In production, this might need a secure tunnel or proxy path
+        return {"status": "success", "port": port, "message": "Browser started"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/admin/browser/stop")
+async def stop_browser(user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    browser_manager.stop()
+    return {"status": "success", "message": "Browser stopped"}
+
+@app.post("/api/admin/browser/extract")
+async def extract_browser_cookies(user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    success = await browser_manager.extract_cookies()
+    if success:
+        return {"status": "success", "message": "✅ Đã tự động cập nhật auth.json từ trình duyệt ảo!"}
+    else:
+        return {"status": "error", "message": "❌ Không tìm thấy thông tin đăng nhập trong trình duyệt."}
 
 # In-memory session store
 conversation_map = {}
