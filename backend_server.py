@@ -7,6 +7,9 @@ import subprocess
 import firebase_admin
 from firebase_admin import credentials, auth
 from typing import Optional
+import asyncio
+from datetime import datetime
+from execution.notebooklm_query import get_client
 
 app = FastAPI(title="Clinic Assistant API")
 
@@ -196,7 +199,6 @@ async def get_auth_status(user: dict = Depends(verify_firebase_token)):
     auth_path = os.path.expanduser("~/.notebooklm-mcp/auth.json")
     if os.path.exists(auth_path):
         mtime = os.path.getmtime(auth_path)
-        from datetime import datetime
         last_updated = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
         return {"exists": True, "last_updated": last_updated}
     return {"exists": False, "last_updated": None}
@@ -257,7 +259,6 @@ async def startup_event():
 conversation_map = {}
 
 from fastapi.responses import StreamingResponse
-import asyncio
 
 @app.post("/api/chat")
 async def chat(request: ChatRequest, user=Depends(verify_firebase_token)):
