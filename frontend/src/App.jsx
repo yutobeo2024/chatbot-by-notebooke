@@ -67,6 +67,7 @@ function App() {
   const [isReauthing, setIsReauthing] = useState(false)
   const [isUploadingAuth, setIsUploadingAuth] = useState(false)
   const [authUploadMsg, setAuthUploadMsg] = useState('')
+  const [authStatus, setAuthStatus] = useState({ exists: false, last_updated: null })
   const authFileRef = useRef(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8042'
@@ -83,6 +84,9 @@ function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser)
+      if (currentUser) {
+        fetchAuthStatus()
+      }
     })
     return () => unsubscribe()
   }, [])
@@ -103,6 +107,21 @@ function App() {
   useEffect(() => {
     fetchModules()
   }, [])
+
+  const fetchAuthStatus = async () => {
+    if (!auth.currentUser) return
+    try {
+      const response = await fetch(`${API_URL}/api/admin/auth-status`, {
+        headers: {
+          'Authorization': `Bearer ${await auth.currentUser.getIdToken()}`
+        }
+      })
+      const data = await response.json()
+      setAuthStatus(data)
+    } catch (err) {
+      console.error('Failed to fetch auth status', err)
+    }
+  }
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -188,6 +207,7 @@ function App() {
       const data = await response.json()
       if (response.ok) {
         setAuthUploadMsg(data.message)
+        fetchAuthStatus() // Refresh status
       } else {
         setAuthUploadMsg('❌ Lỗi: ' + (data.detail || data.message))
       }
@@ -349,6 +369,9 @@ function App() {
           <div className="admin-dashboard">
             <div className="chat-header">
               <h2>Quản lý Notebook IDs</h2>
+              <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
+                Trạng thái Auth: {authStatus.exists ? `✅ Đã có (Cập nhật lúc: ${authStatus.last_updated})` : '❌ Chưa có file auth.json'}
+              </div>
               <div>
                 <button onClick={handleReauth} disabled={isReauthing} className="save-btn" style={{ marginRight: '10px', backgroundColor: '#e2e8f0', color: '#1e293b' }}>
                   {isReauthing ? 'Đang kết nối...' : 'Kết nối lại NotebookLM'}

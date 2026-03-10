@@ -122,6 +122,17 @@ async def upload_auth_file(file: UploadFile = File(...), user=Depends(verify_fir
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi lưu file: {str(e)}")
 
+@app.get("/api/admin/auth-status")
+async def get_auth_status(user=Depends(verify_firebase_token)):
+    """Check the status of the NotebookLM auth file."""
+    auth_path = os.path.expanduser("~/.notebooklm-mcp/auth.json")
+    if os.path.exists(auth_path):
+        mtime = os.path.getmtime(auth_path)
+        from datetime import datetime
+        last_updated = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+        return {"exists": True, "last_updated": last_updated}
+    return {"exists": False, "last_updated": None}
+
 
 # In-memory session store: { "module_id": "conversation_id" }
 # Note: In a production app with multiple users, this should be { "user_id_module_id": "conversation_id" }
