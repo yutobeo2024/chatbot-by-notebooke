@@ -21,11 +21,16 @@ body {
   background-color: var(--bg-color);
   color: var(--text-color);
   overflow: hidden;
+  height: 100vh;
+  height: 100svh;
+  /* Use short viewport height */
 }
 
 .app-container {
   display: flex;
   height: 100vh;
+  height: 100dvh;
+  /* Dynamic viewport height */
   width: 100vw;
 }
 
@@ -327,14 +332,29 @@ body {
 
 /* Thinking dots animation */
 @keyframes blink {
-  0%, 80%, 100% { opacity: 0; }
-  40% { opacity: 1; }
+
+  0%,
+  80%,
+  100% {
+    opacity: 0;
+  }
+
+  40% {
+    opacity: 1;
+  }
 }
+
 .thinking-dots span {
   animation: blink 1.4s infinite;
 }
-.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
-.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+.thinking-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
 
 /* Mobile Menu Toggle */
 .menu-toggle {
@@ -400,8 +420,15 @@ body {
     font-size: 0.9rem;
   }
 
+  .chat-header {
+    padding: calc(15px + env(safe-area-inset-top)) 15px 15px 15px;
+    min-height: 70px;
+    display: flex;
+    align-items: center;
+  }
+
   .chat-header h2 {
-    font-size: 1rem;
+    font-size: 0.95rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
