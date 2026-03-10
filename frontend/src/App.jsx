@@ -68,6 +68,7 @@ function App() {
   const [isReauthing, setIsReauthing] = useState(false)
   const [isUploadingAuth, setIsUploadingAuth] = useState(false)
   const [authUploadMsg, setAuthUploadMsg] = useState('')
+  const [testStatus, setTestStatus] = useState({ state: 'idle', message: '' })
   const [authStatus, setAuthStatus] = useState({ exists: false, last_updated: null })
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const [isRegistering, setIsRegistering] = useState(false)
@@ -134,6 +135,7 @@ function App() {
     }
   }
 
+
   const fetchWhitelist = async () => {
     if (!auth.currentUser) return
     try {
@@ -184,6 +186,25 @@ function App() {
       if (response.ok) fetchWhitelist()
     } catch (err) {
       console.error('Remove whitelist failed', err)
+    }
+  }
+
+  const handleTestAuth = async () => {
+    setTestStatus({ state: 'testing', message: 'Đang kiểm tra...' })
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch(`${API_URL}/api/admin/test-auth`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      if (data.status === 'success') {
+        setTestStatus({ state: 'success', message: data.message })
+        fetchAuthStatus() // Refresh last updated time
+      } else {
+        setTestStatus({ state: 'error', message: data.message })
+      }
+    } catch (err) {
+      setTestStatus({ state: 'error', message: 'Lỗi kết nối máy chủ.' })
     }
   }
 
@@ -488,10 +509,16 @@ function App() {
               </button>
               <h2>Quản lý Notebook IDs</h2>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
-                Trạng thái Auth: {authStatus.exists ? `✅ Đã có (Cập nhật lúc: ${authStatus.last_updated})` : '❌ Chưa có file auth.json'}
+                Trạng thái Auth: {authStatus.exists ?
+                  <span style={{ color: '#059669', fontWeight: 'bold' }}>✅ Đã có (Cập nhật lúc: {authStatus.last_updated})</span> :
+                  <span style={{ color: '#dc2626' }}>❌ Chưa có file auth.json</span>
+                }
               </div>
-              <div>
-                <button onClick={handleReauth} disabled={isReauthing} className="save-btn" style={{ marginRight: '10px', backgroundColor: '#e2e8f0', color: '#1e293b' }}>
+              <div style={{ marginTop: '10px', display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                <button onClick={handleTestAuth} disabled={testStatus.state === 'testing'} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>
+                  {testStatus.state === 'testing' ? '⏳ Đang kiểm tra...' : '⚡ Kiểm tra kết nối'}
+                </button>
+                <button onClick={handleReauth} disabled={isReauthing} className="save-btn" style={{ backgroundColor: '#e2e8f0', color: '#1e293b' }}>
                   {isReauthing ? 'Đang kết nối...' : 'Kết nối lại NotebookLM'}
                 </button>
                 <input
@@ -505,12 +532,17 @@ function App() {
                   onClick={() => authFileRef.current?.click()}
                   disabled={isUploadingAuth}
                   className="save-btn"
-                  style={{ marginRight: '10px', backgroundColor: '#d1fae5', color: '#065f46' }}
+                  style={{ backgroundColor: '#d1fae5', color: '#065f46' }}
                 >
                   {isUploadingAuth ? 'Đang upload...' : '📂 Upload auth.json'}
                 </button>
                 <button onClick={handleUpdateConfig} className="save-btn">Lưu thay đổi</button>
               </div>
+              {testStatus.message && (
+                <div style={{ marginTop: '8px', fontSize: '13px', color: testStatus.state === 'success' ? '#059669' : '#dc2626' }}>
+                  {testStatus.message}
+                </div>
+              )}
             </div>
             {authUploadMsg && (
               <div style={{ padding: '8px 16px', margin: '0 16px', borderRadius: '8px', backgroundColor: authUploadMsg.startsWith('❌') ? '#fee2e2' : '#d1fae5', color: authUploadMsg.startsWith('❌') ? '#991b1b' : '#065f46', fontSize: '14px' }}>

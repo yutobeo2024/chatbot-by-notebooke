@@ -202,7 +202,58 @@ async def get_auth_status(user: dict = Depends(verify_firebase_token)):
     return {"exists": False, "last_updated": None}
 
 
-# In-memory session store: { "user_id_module_id": "conversation_id" }
+@app.get("/api/admin/test-auth")
+async def test_auth(user: dict = Depends(verify_firebase_token)):
+    """Manually test if the current NotebookLM session is still valid."""
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    config = load_config()
+    # Use any available notebook ID for testing
+    nb_id = next(iter(config["modules"].values()))["notebook_id"] if config["modules"] else None
+    
+    if not nb_id:
+        return {"status": "error", "message": "No notebooks configured to test with."}
+
+    client = get_client()
+    if not client:
+        return {"status": "error", "message": "Authentication file (auth.json) not found."}
+
+    try:
+        # Try a lightweight operation: get notebook metadata
+        client.get_notebook(nb_id)
+        return {"status": "success", "message": "Kết nối tốt! Phiên làm việc vẫn đang hoạt động."}
+    except Exception as e:
+        error_msg = str(e)
+        if "Authentication expired" in error_msg:
+            return {"status": "expired", "message": "Phiên làm việc đã hết hạn. Hãy upload auth.json mới."}
+        return {"status": "error", "message": f"Lỗi kết nối: {error_msg}"}
+
+async def heartbeat_task():
+    """Background task to keep NotebookLM session alive."""
+    while True:
+        try:
+            config = load_config()
+            if config["modules"]:
+                nb_id = next(iter(config["modules"].values()))["notebook_id"]
+                client = get_client()
+                if client:
+                    # Just a small ping to keep session warm
+                    client.get_notebook(nb_id)
+                    # sys.stderr.write("Heartbeat: Session refreshed successfully.\n")
+        except Exception:
+            # sys.stderr.write(f"Heartbeat failed: {str(e)}\n")
+            pass
+        
+        # Sleep for 30 minutes
+        await asyncio.sleep(1800)
+
+@app.on_event("startup")
+async def startup_event():
+    # Start heartbeat in background
+    asyncio.create_task(heartbeat_task())
+
+# In-memory session store
 conversation_map = {}
 
 from fastapi.responses import StreamingResponse
