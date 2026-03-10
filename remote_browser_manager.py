@@ -17,21 +17,36 @@ class RemoteBrowserManager:
         self.display = ":99"
         self.user_data_dir = os.path.expanduser("~/.notebooklm-remote-profile")
 
+    def _find_binary(self, name):
+        """Finds a binary on the system."""
+        path = shutil.which(name)
+        if path:
+            return path
+        # Common fallback paths for Ubuntu/Debian
+        fallbacks = [f"/usr/bin/{name}", f"/usr/local/bin/{name}"]
+        for f in fallbacks:
+            if os.path.exists(f):
+                return f
+        return name # Return name anyway and hope for the best
+
     def start(self):
         """Starts the virtual display and browser."""
+        xvfb_path = self._find_binary("Xvfb")
+        vnc_path = self._find_binary("x11vnc")
+        browser_path = self._find_binary("chromium-browser") or self._find_binary("chromium")
+
         # 1. Start Xvfb
-        self.xvfb_proc = subprocess.Popen(["Xvfb", self.display, "-screen", "0", "1280x800x24"])
+        self.xvfb_proc = subprocess.Popen([xvfb_path, self.display, "-screen", "0", "1280x800x24"])
         os.environ["DISPLAY"] = self.display
         time.sleep(2)
 
         # 2. Start x11vnc
         self.vnc_proc = subprocess.Popen([
-            "x11vnc", "-display", self.display, "-nopw", "-listen", "localhost", "-rfbport", str(self.port_vnc), "-forever"
+            vnc_path, "-display", self.display, "-nopw", "-listen", "localhost", "-rfbport", str(self.port_vnc), "-forever"
         ])
         time.sleep(2)
 
         # 3. Start noVNC (websockify)
-        # assuming novnc is installed in /usr/share/novnc or similar
         novnc_path = "/usr/share/novnc/utils/novnc_proxy"
         if not os.path.exists(novnc_path):
             novnc_path = shutil.which("novnc_proxy") or "novnc_proxy"
@@ -43,7 +58,7 @@ class RemoteBrowserManager:
         # 4. Start Chromium
         os.makedirs(self.user_data_dir, exist_ok=True)
         self.browser_proc = subprocess.Popen([
-            "chromium-browser",
+            browser_path,
             "--no-sandbox",
             f"--user-data-dir={self.user_data_dir}",
             "--window-size=1200,800",
