@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import subprocess
@@ -286,7 +286,82 @@ async def extract_browser_cookies(user: dict = Depends(verify_firebase_token)):
     if success:
         return {"status": "success", "message": "✅ Đã tự động cập nhật auth.json từ trình duyệt ảo!"}
     else:
-        return {"status": "error", "message": "❌ Không tìm thấy thông tin đăng nhập trong trình duyệt."}
+        return {"status": "error", "message": "❌ Lỗi: Không thể lấy chìa khóa. Bạn đã đăng nhập vào NotebookLM chưa?"}
+
+@app.websocket("/api/admin/browser/ws")
+async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
+    # Authenticate via token query param (since WS doesn't support custom headers easily in all clients)
+    if not token:
+        await websocket.close(code=4003)
+        return
+    
+    try:
+        decoded_token = auth.verify_id_token(token)
+        if decoded_token.get("email") != ADMIN_EMAIL:
+            await websocket.close(code=4003)
+            return
+    except:
+        await websocket.close(code=4003)
+        return
+
+    await websocket.accept(subprotocol="binary")
+    
+    try:
+        # Tunnel to local VNC server (RFB)
+        reader, writer = await asyncio.open_connection("127.0.0.1", 5901)
+        
+        async def ws_to_vnc():
+            try:
+                while True:
+                    data = await websocket.receive_bytes()
+                    writer.write(data)
+                    await writer.drain()
+            except:
+                pass
+
+        async def vnc_to_ws():
+            try:
+                while True:
+                    data = await reader.read(4096)
+                    if not data: break
+                    await websocket.send_bytes(data)
+            except:
+                pass
+
+        await asyncio.gather(ws_to_vnc(), vnc_to_ws())
+    except Exception as e:
+        print(f"VNC Proxy Error: {e}")
+    finally:
+        await websocket.close()
+
+@app.get("/api/admin/browser/view")
+async def get_browser_view():
+    """Returns a simple HTML page that embeds noVNC from a CDN."""
+    return StreamingResponse(asyncio.to_thread(lambda: f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Remote Browser View</title>
+        <style>body, html, #vnc {{ width: 100%; height: 100%; margin: 0; background: #000; overflow: hidden; }}</style>
+    </head>
+    <body>
+        <div id="vnc"></div>
+        <script type="module">
+            import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.3.0/core/rfb.js';
+            const url = new URL(window.location);
+            const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsPath = url.pathname.replace('/view', '/ws');
+            // We'll need the token from the parent or storage
+            const token = localStorage.getItem('fb_id_token') || url.searchParams.get('token');
+            const rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
+                wsProtocols: ['binary']
+            }});
+            rfb.scaleViewport = true;
+            rfb.resizeSession = true;
+        </script>
+    </body>
+    </html>
+    """.encode('utf-8')), media_type="text/html")
 
 # In-memory session store
 conversation_map = {}

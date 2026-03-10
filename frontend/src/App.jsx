@@ -221,8 +221,8 @@ function App() {
       })
       const data = await res.json()
       if (data.status === 'success') {
-        const hostname = window.location.hostname
-        setBrowserUrl(`http://${hostname}:${data.port}/vnc.html?autoconnect=true&resize=scale`)
+        const token = await user.getIdToken()
+        setBrowserUrl(`${API_URL}/api/admin/browser/view?token=${token}`)
         setShowBrowser(true)
       } else {
         alert('Lỗi khởi động trình duyệt: ' + data.detail)
@@ -619,7 +619,10 @@ function App() {
                 <div className="browser-toolbar" style={{ padding: '10px', backgroundColor: '#fff', display: 'flex', gap: '10px', alignItems: 'center' }}>
                   <button onClick={extractBrowserCookies} className="save-btn">🎯 Lấy chìa khóa</button>
                   <button onClick={stopRemoteBrowser} className="save-btn" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Đóng trình duyệt</button>
-                  <span style={{ fontSize: '12px', color: '#64748b' }}>Đăng nhập Google xong hãy bấm "Lấy chìa khóa"</span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+                    Đăng nhập xong hãy bấm "Lấy chìa khóa". <br />
+                    *Nếu màn hình trắng, hãy cho phép "Insecure content" trong cài đặt trình duyệt của trang web này.
+                  </span>
                 </div>
                 <iframe src={browserUrl} style={{ flex: 1, border: 'none', width: '100%' }} title="Remote Browser"></iframe>
               </div>

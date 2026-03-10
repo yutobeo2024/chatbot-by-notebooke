@@ -4,6 +4,8 @@ import time
 import signal
 import json
 import shutil
+import sys
+from datetime import datetime
 from pathlib import Path
 
 class RemoteBrowserManager:
@@ -23,26 +25,48 @@ class RemoteBrowserManager:
         if path:
             return path
         # Common fallback paths for Ubuntu/Debian
-        fallbacks = [f"/usr/bin/{name}", f"/usr/local/bin/{name}"]
+        fallbacks = [f"/usr/bin/{name}", f"/usr/local/bin/{name}", f"/usr/bin/{name.lower()}"]
         for f in fallbacks:
             if os.path.exists(f):
                 return f
-        return name # Return name anyway and hope for the best
+        return name
+
+    def _cleanup_zombies(self):
+        """Kills any previous hanging processes."""
+        try:
+            # Kill by process names
+            subprocess.run(["pkill", "-f", "Xvfb :99"], stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", "x11vnc.*:5901"], stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", "chromium-browser"], stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", "novnc_proxy"], stderr=subprocess.DEVNULL)
+            
+            # Cleanup X11 lock files
+            for f in ["/tmp/.X99-lock", "/tmp/.X11-unix/X99"]:
+                if os.path.exists(f):
+                    try: os.remove(f)
+                    except: pass
+        except:
+            pass
 
     def start(self):
         """Starts the virtual display and browser."""
+        self._cleanup_zombies()
+        time.sleep(1)
+
         xvfb_path = self._find_binary("Xvfb")
         vnc_path = self._find_binary("x11vnc")
         browser_path = self._find_binary("chromium-browser") or self._find_binary("chromium")
 
         # 1. Start Xvfb
-        self.xvfb_proc = subprocess.Popen([xvfb_path, self.display, "-screen", "0", "1280x800x24"])
+        sys.stderr.write(f"[{datetime.now()}] Starting Xvfb on {self.display}...\n")
+        self.xvfb_proc = subprocess.Popen([xvfb_path, self.display, "-screen", "0", "1280x1024x24"])
         os.environ["DISPLAY"] = self.display
         time.sleep(2)
 
         # 2. Start x11vnc
+        sys.stderr.write(f"[{datetime.now()}] Starting x11vnc on port {self.port_vnc}...\n")
         self.vnc_proc = subprocess.Popen([
-            vnc_path, "-display", self.display, "-nopw", "-listen", "localhost", "-rfbport", str(self.port_vnc), "-forever"
+            vnc_path, "-display", self.display, "-nopw", "-listen", "localhost", "-rfbport", str(self.port_vnc), "-forever", "-shared"
         ])
         time.sleep(2)
 
@@ -51,19 +75,26 @@ class RemoteBrowserManager:
         if not os.path.exists(novnc_path):
             novnc_path = shutil.which("novnc_proxy") or "novnc_proxy"
 
+        sys.stderr.write(f"[{datetime.now()}] Starting noVNC on port {self.port_web}...\n")
         self.novnc_proc = subprocess.Popen([
             novnc_path, "--vnc", f"localhost:{self.port_vnc}", "--listen", str(self.port_web)
         ])
+        time.sleep(2)
 
         # 4. Start Chromium
+        sys.stderr.write(f"[{datetime.now()}] Starting Chromium at {browser_path}...\n")
         os.makedirs(self.user_data_dir, exist_ok=True)
         self.browser_proc = subprocess.Popen([
             browser_path,
             "--no-sandbox",
             f"--user-data-dir={self.user_data_dir}",
-            "--window-size=1200,800",
+            "--window-size=1200,900",
             "--remote-debugging-port=9222",
-            "--remote-debugging-address=0.0.0.0",
+            "--remote-debugging-address=127.0.0.1",
+            "--disable-gpu",
+            "--disable-software-rasterizer",
+            "--disable-dev-shm-usage",
+            "--no-first-run",
             "https://notebooklm.google.com"
         ])
 
