@@ -68,6 +68,7 @@ function App() {
   const [isUploadingAuth, setIsUploadingAuth] = useState(false)
   const [authUploadMsg, setAuthUploadMsg] = useState('')
   const [authStatus, setAuthStatus] = useState({ exists: false, last_updated: null })
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
   const authFileRef = useRef(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8042'
@@ -326,8 +327,11 @@ function App() {
 
   return (
     <div className="app-container">
+      {/* Mobile Overlay */}
+      {isSidebarOpen && <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)}></div>}
+
       {/* Sidebar */}
-      <div className="sidebar">
+      <div className={`sidebar ${isSidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-header">
           <h1>Y Dược Sài Gòn</h1>
           {user ? (
@@ -353,7 +357,10 @@ function App() {
               <li
                 key={id}
                 className={`module-item ${activeModuleId === id ? 'active' : ''}`}
-                onClick={() => setActiveModuleId(id)}
+                onClick={() => {
+                  setActiveModuleId(id)
+                  setIsSidebarOpen(false)
+                }}
               >
                 <span className="module-name">{module.name}</span>
                 <span className="module-desc">{module.description}</span>
@@ -368,6 +375,11 @@ function App() {
         {showAdmin ? (
           <div className="admin-dashboard">
             <div className="chat-header">
+              <button className="menu-toggle" onClick={() => setIsSidebarOpen(true)}>
+                <span></span>
+                <span></span>
+                <span></span>
+              </button>
               <h2>Quản lý Notebook IDs</h2>
               <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>
                 Trạng thái Auth: {authStatus.exists ? `✅ Đã có (Cập nhật lúc: ${authStatus.last_updated})` : '❌ Chưa có file auth.json'}
@@ -421,6 +433,11 @@ function App() {
         ) : (
           <>
             <div className="chat-header">
+              <button className="menu-toggle" onClick={() => setIsSidebarOpen(true)}>
+                <span></span>
+                <span></span>
+                <span></span>
+              </button>
               <h2>Trợ lý: {modules[activeModuleId]?.name || 'Đang tải...'}</h2>
             </div>
 
