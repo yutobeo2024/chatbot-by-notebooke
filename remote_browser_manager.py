@@ -62,6 +62,8 @@ class RemoteBrowserManager:
             "--no-sandbox",
             f"--user-data-dir={self.user_data_dir}",
             "--window-size=1200,800",
+            "--remote-debugging-port=9222",
+            "--remote-debugging-address=0.0.0.0",
             "https://notebooklm.google.com"
         ])
 
@@ -83,28 +85,36 @@ class RemoteBrowserManager:
 
     async def extract_cookies(self):
         """
-        Extracts cookies from the Chromium profile using Playwright and saves to auth.json.
+        Extracts cookies from the running Chromium instance via CDP.
         """
         from playwright.async_api import async_playwright
+        import sys
         
-        async with async_playwright() as p:
-            # We launch persistent context to access the user data dir used during login
-            context = await p.chromium.launch_persistent_context(
-                user_data_dir=self.user_data_dir,
-                headless=True
-            )
-            cookies = await context.cookies()
-            await context.close()
+        try:
+            async with async_playwright() as p:
+                # Connect to the already running browser via CDP
+                browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+                # Get the first context/page
+                if not browser.contexts:
+                    return False
+                
+                context = browser.contexts[0]
+                cookies = await context.cookies()
+                await browser.close() # This closes the CDP connection, not necessarily the browser process
 
-            if cookies:
-                auth_dir = os.path.expanduser("~/.notebooklm-mcp")
-                os.makedirs(auth_dir, exist_ok=True)
-                auth_path = os.path.join(auth_dir, "auth.json")
-                
-                with open(auth_path, "w", encoding="utf-8") as f:
-                    json.dump(cookies, f, indent=2)
-                
-                return True
+                if cookies:
+                    auth_dir = os.path.expanduser("~/.notebooklm-mcp")
+                    os.makedirs(auth_dir, exist_ok=True)
+                    auth_path = os.path.join(auth_dir, "auth.json")
+                    
+                    with open(auth_path, "w", encoding="utf-8") as f:
+                        json.dump(cookies, f, indent=2)
+                    
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Cookies extracted successfully.\n")
+                    return True
+        except Exception as e:
+            sys.stderr.write(f"[{datetime.now()}] Remote Auth Extraction Failed: {str(e)}\n")
+            return False
         return False
 
 if __name__ == "__main__":
