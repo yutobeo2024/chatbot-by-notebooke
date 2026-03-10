@@ -287,11 +287,20 @@ async def extract_browser_cookies(user: dict = Depends(verify_firebase_token)):
     sys.stderr.write(f"[{datetime.now()}] Admin cookie extraction started\n")
     success = await browser_manager.extract_cookies()
     if success:
-        return {"status": "success", "message": "✅ Đã tự động cập nhật auth.json từ trình duyệt ảo!"}
+        return {"status": "success", "message": "✅ Đã tự động cập nhật auth.json thành công!"}
     else:
-        # Get logs to help debug
+        # Check why it failed
         logs = browser_manager.get_logs()
-        return {"status": "error", "message": f"❌ Lỗi: Không thể lấy chìa khóa. Bạn đã đăng nhập vào NotebookLM chưa?\n\nDebug Logs:\n{logs[-1000:]}"}
+        last_logs = "\n".join(logs[-5:])
+        
+        if "Missing critical cookies" in last_logs:
+            msg = "❌ Lỗi: Thiếu các Cookie quan trọng. Hãy đảm bảo bạn đã đăng nhập tài khoản Google hoàn tất."
+        elif "NOT FOUND" in last_logs:
+            msg = "⚠️ Cảnh báo: Lấy được Cookie nhưng không tìm thấy mã bảo mật (CSRF). Hãy thử bấm 'Tải lại trang' trong cửa sổ trình duyệt và thử lại."
+        else:
+            msg = "❌ Lỗi: Không thể lấy chìa khóa. Bạn đã vào đến màn hình NotebookLM chưa?"
+            
+        return {"status": "error", "message": f"{msg}\n\nNhật ký hệ thống:\n{last_logs}"}
 
 @app.get("/api/admin/browser/logs")
 async def get_browser_logs(user: dict = Depends(verify_firebase_token)):

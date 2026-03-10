@@ -128,6 +128,7 @@ class RemoteBrowserManager:
                 "--disable-background-timer-throttling",
                 "--disable-renderer-backgrounding",
                 "--start-maximized",
+                '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"',
                 "https://notebooklm.google.com"
             ], stdout=log_file, stderr=log_file)
             time.sleep(3)
@@ -220,8 +221,8 @@ class RemoteBrowserManager:
                         page = await context.new_page()
                         await page.goto("https://notebooklm.google.com", timeout=20000, wait_until="networkidle")
                     
-                    # Wait a bit for WIZ_global_data to populate if needed
-                    for attempt in range(3):
+                    # Wait and evaluate for CSRF
+                    for attempt in range(5):
                         tokens = await page.evaluate("""() => {
                             const data = window.WIZ_global_data || {};
                             return {
@@ -234,19 +235,16 @@ class RemoteBrowserManager:
                         if csrf_token: break
                         await asyncio.sleep(2)
                         
-                    # Fallback: if still no CSRF, try to refresh the page once
+                    # Fallback: Search in page content directly if evaluation lacks it
                     if not csrf_token:
-                        sys.stderr.write(f"[{datetime.now()}] Remote Auth: CSRF not found, refreshing page...\n")
-                        await page.reload(timeout=20000, wait_until="networkidle")
-                        tokens = await page.evaluate("""() => {
-                            const data = window.WIZ_global_data || {};
-                            return {
-                                at: data.SNlM0e || '',
-                                sid: data.FdrFJe || ''
-                            };
-                        }""")
-                        csrf_token = tokens.get('at', '')
-                        session_id = tokens.get('sid', '')
+                        html = await page.content()
+                        import re
+                        csrf_match = re.search(r'"SNlM0e":"([^"]+)"', html)
+                        if csrf_match:
+                            csrf_token = csrf_match.group(1)
+                        sid_match = re.search(r'"FdrFJe":"([^"]+)"', html)
+                        if sid_match:
+                            session_id = sid_match.group(1)
 
                 except Exception as e:
                     sys.stderr.write(f"[{datetime.now()}] Remote Auth: CSRF/SID extraction failed: {e}\n")
@@ -257,6 +255,13 @@ class RemoteBrowserManager:
                     # Convert Playwright list[dict] to simple dict[name, value]
                     cookies_dict = {c['name']: c['value'] for c in cookies_list}
                     
+                    # VALIDATION: Check for required Google cookies
+                    required = ["SID", "HSID", "SSID", "APISID", "SAPISID"]
+                    missing = [r for r in required if r not in cookies_dict]
+                    if missing and len(missing) > 2: # Allow some missing if others exist
+                         sys.stderr.write(f"[{datetime.now()}] Remote Auth: Missing critical cookies: {missing}\n")
+                         return False
+
                     auth_dir = os.path.expanduser("~/.notebooklm-mcp")
                     os.makedirs(auth_dir, exist_ok=True)
                     auth_path = os.path.join(auth_dir, "auth.json")
@@ -272,8 +277,9 @@ class RemoteBrowserManager:
                     with open(auth_path, "w", encoding="utf-8") as f:
                         json.dump(auth_data, f, indent=2)
                     
-                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Tokens saved ({len(cookies_dict)} cookies, CSRF: {'Yes' if csrf_token else 'No'}).\n")
-                    return True
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: SUCCESS ({len(cookies_dict)} cookies, CSRF: {'Found' if csrf_token else 'NOT FOUND'}).\n")
+                    # If CSRF is still missing, it's a "soft" failure but we save what we have
+                    return True if csrf_token else False
                 else:
                     sys.stderr.write(f"[{datetime.now()}] Remote Auth: No cookies retrieved from browser.\n")
                     return False
