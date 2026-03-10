@@ -32,21 +32,24 @@ class RemoteBrowserManager:
         return name
 
     def _cleanup_zombies(self):
-        """Kills any previous hanging processes."""
+        """Kills any previous hanging processes and removes X11 lock files."""
         try:
             # Kill by process names
-            subprocess.run(["pkill", "-f", "Xvfb :99"], stderr=subprocess.DEVNULL)
-            subprocess.run(["pkill", "-f", "x11vnc.*:5901"], stderr=subprocess.DEVNULL)
-            subprocess.run(["pkill", "-f", "chromium-browser"], stderr=subprocess.DEVNULL)
-            subprocess.run(["pkill", "-f", "novnc_proxy"], stderr=subprocess.DEVNULL)
+            for proc in ["Xvfb", "x11vnc", "chromium-browser", "chromium", "google-chrome"]:
+                subprocess.run(["pkill", "-9", "-f", proc], stderr=subprocess.DEV_NULL)
             
-            # Cleanup X11 lock files
-            for f in ["/tmp/.X99-lock", "/tmp/.X11-unix/X99"]:
-                if os.path.exists(f):
-                    try: os.remove(f)
+            # Cleanup X11 lock files (Critical for VPS stability)
+            display_num = self.display[1:] # e.g. "99"
+            lock_files = [f"/tmp/.X{display_num}-lock", f"/tmp/.X11-unix/X{display_num}"]
+            for lock in lock_files:
+                if os.path.exists(lock):
+                    try:
+                        if os.path.isdir(lock): shutil.rmtree(lock)
+                        else: os.remove(lock)
+                        sys.stderr.write(f"Removed stale lock: {lock}\n")
                     except: pass
-        except:
-            pass
+        except Exception as e:
+            sys.stderr.write(f"Cleanup error: {e}\n")
 
     def start(self):
         """Starts the virtual display and browser."""
@@ -60,45 +63,38 @@ class RemoteBrowserManager:
                        self._find_binary("google-chrome")
 
         if not xvfb_path or not vnc_path or not browser_path:
-            missing = []
-            if not xvfb_path: missing.append("Xvfb")
-            if not vnc_path: missing.append("x11vnc")
-            if not browser_path: missing.append("Chromium/Chrome")
-            sys.stderr.write(f"[{datetime.now()}] START ERROR: Missing binaries: {', '.join(missing)}\n")
+            sys.stderr.write(f"[{datetime.now()}] ERROR: Missing binaries: Xvfb={xvfb_path}, VNC={vnc_path}, Browser={browser_path}\n")
             return False
 
-        # 1. Start Xvfb (Higher resolution for better experience)
-        sys.stderr.write(f"[{datetime.now()}] Starting Xvfb on {self.display} (Path: {xvfb_path})...\n")
+        # 1. Start Xvfb
+        sys.stderr.write(f"[{datetime.now()}] Starting Xvfb on {self.display}...\n")
         try:
             self.xvfb_proc = subprocess.Popen([xvfb_path, self.display, "-screen", "0", "1280x1024x24"])
             time.sleep(2)
             if self.xvfb_proc.poll() is not None:
-                raise Exception(f"Xvfb failed to start. Return code: {self.xvfb_proc.returncode}")
+                raise Exception(f"Xvfb failed to start (code {self.xvfb_proc.returncode})")
         except Exception as e:
             sys.stderr.write(f"[{datetime.now()}] Xvfb Error: {str(e)}\n")
             return False
 
         os.environ["DISPLAY"] = self.display
 
-        # 2. Start x11vnc (Removing -bg to keep it trackable)
+        # 2. Start x11vnc
         sys.stderr.write(f"[{datetime.now()}] Starting x11vnc on port {self.port_vnc}...\n")
         try:
             self.vnc_proc = subprocess.Popen([
                 vnc_path, "-display", self.display, "-nopw", "-localhost", "-rfbport", str(self.port_vnc), "-forever", "-shared"
             ])
             time.sleep(2)
-            # Check if VNC is actually listening
             if self.vnc_proc.poll() is not None:
-                raise Exception(f"x11vnc failed to start. Return code: {self.vnc_proc.returncode}")
+                raise Exception("x11vnc failed to start")
         except Exception as e:
             sys.stderr.write(f"[{datetime.now()}] x11vnc Error: {str(e)}\n")
             return False
 
-        # 3. Start Chromium with logging
-        sys.stderr.write(f"[{datetime.now()}] Starting Chromium at {browser_path}...\n")
+        # 3. Start Chromium
+        sys.stderr.write(f"[{datetime.now()}] Starting Chromium...\n")
         os.makedirs(self.user_data_dir, exist_ok=True)
-        
-        # Open log file
         log_file = open("/tmp/chromium_remote.log", "w")
         
         try:
@@ -107,41 +103,53 @@ class RemoteBrowserManager:
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 f"--user-data-dir={self.user_data_dir}",
-                "--window-size=1200,900",
+                "--window-size=1280,1024",
                 "--remote-debugging-port=9222",
                 "--remote-debugging-address=127.0.0.1",
                 "--disable-gpu",
-                "--disable-software-rasterizer",
-                "--disable-dev-shm-usage",
                 "--no-first-run",
                 "--password-store=basic",
                 "--lang=en-US",
                 "--disable-background-timer-throttling",
-                "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
-                # Prevent some startup prompts
-                "--no-default-browser-check",
                 "--start-maximized",
                 "https://notebooklm.google.com"
             ], stdout=log_file, stderr=log_file)
             time.sleep(3)
-            if self.browser_proc.poll() is not None:
-                 sys.stderr.write(f"[{datetime.now()}] Chromium failed to start or exited quickly. Check /tmp/chromium_remote.log\n")
-                 # We don't necessarily return False here as some browsers might fork 
-                 # but we've alerted the logs.
         except Exception as e:
             sys.stderr.write(f"[{datetime.now()}] Chromium Error: {str(e)}\n")
 
         return self.port_web
 
+    async def take_screenshot(self):
+        """Takes a screenshot of the current browser page via CDP."""
+        from playwright.async_api import async_playwright
+        import asyncio
+        try:
+            async with async_playwright() as p:
+                browser = await asyncio.wait_for(
+                    p.chromium.connect_over_cdp("http://127.0.0.1:9222"),
+                    timeout=10
+                )
+                if not browser.contexts: return None
+                page = browser.contexts[0].pages[0] if browser.contexts[0].pages else await browser.contexts[0].new_page()
+                screenshot_bytes = await page.screenshot(type="jpeg", quality=60)
+                await browser.close()
+                return screenshot_bytes
+        except Exception as e:
+            sys.stderr.write(f"Screenshot Error: {e}\n")
+            return None
+
     def get_logs(self):
-        """Returns the last lines of the chromium log."""
+        """Returns diagnostic logs."""
+        logs = []
         if os.path.exists("/tmp/chromium_remote.log"):
             try:
                 with open("/tmp/chromium_remote.log", "r") as f:
-                    return f.read()[-3000:]
+                    logs.append("--- CHROMIUM OUTPUT ---")
+                    logs.append(f.read()[-2000:])
             except: pass
-        return "No diagnostic logs found."
+        return "\n".join(logs) if logs else "No logs found."
 
     def stop(self):
         """Stops all processes."""

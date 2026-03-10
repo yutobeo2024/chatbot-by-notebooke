@@ -77,6 +77,7 @@ function App() {
   const [isBrowserLoading, setIsBrowserLoading] = useState(false)
   const [browserLogs, setBrowserLogs] = useState('')
   const [showLogs, setShowLogs] = useState(false)
+  const [screenshotUrl, setScreenshotUrl] = useState(null)
   const [whitelist, setWhitelist] = useState([])
   const [newWhitelistEmail, setNewWhitelistEmail] = useState('')
   const authFileRef = useRef(null)
@@ -284,6 +285,25 @@ function App() {
       alert('Lỗi tải nhật ký.')
     }
   }
+
+  const checkBrowserScreenshot = async () => {
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(`${API_URL}/api/admin/browser/screenshot?token=${token}`);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        setScreenshotUrl(url);
+        // Auto close after 15s
+        setTimeout(() => setScreenshotUrl(null), 15000);
+      } else {
+        const error = await response.json();
+        alert(`Lỗi chụp màn hình: ${error.detail}`);
+      }
+    } catch (err) {
+      alert(`Lỗi kết nối: ${err.message}`);
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -653,15 +673,36 @@ function App() {
                 <div className="browser-toolbar" style={{ padding: '10px', backgroundColor: '#fff', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                   <button onClick={extractBrowserCookies} className="save-btn" style={{ padding: '8px 15px' }}>🎯 Lấy chìa khóa</button>
                   <button onClick={() => { const url = browserUrl; setBrowserUrl(''); setTimeout(() => setBrowserUrl(url), 100); }} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>🔄 Tải lại trang</button>
+                  <button onClick={checkBrowserScreenshot} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#1e40af' }}>🖼️ Kiểm tra màn hình</button>
                   <button onClick={stopRemoteBrowser} className="save-btn" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Đóng trình duyệt</button>
                   <span style={{ fontSize: '11px', color: '#64748b' }}>
                     Đăng nhập Google xong hãy bấm "Lấy chìa khóa". <br />
-                    *Nếu màn hình đen lâu, hãy bấm "Tải lại trang".
+                    *Nếu màn hình đen lâu, hãy bấm "Tải lại trang" hoặc "Kiểm tra màn hình".
                   </span>
                 </div>
                 <div style={{ flex: 1, position: 'relative', backgroundColor: '#fff' }}>
                   {!browserUrl && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>Đang tải màn hình ảo...</div>}
                   <iframe src={browserUrl} style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#fff' }} title="Remote Browser"></iframe>
+
+                  {screenshotUrl && (
+                    <div
+                      onClick={() => setScreenshotUrl(null)}
+                      style={{
+                        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 1100,
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                        color: '#fff', padding: '20px', textAlign: 'center'
+                      }}
+                    >
+                      <h3 style={{ marginBottom: '10px' }}>Ảnh chụp màn hình thực tế (Diagnostic)</h3>
+                      <img
+                        src={screenshotUrl}
+                        alt="Browser State"
+                        style={{ maxWidth: '90%', maxHeight: '70%', border: '4px solid #fff', borderRadius: '8px', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}
+                      />
+                      <p style={{ marginTop: '15px', fontSize: '14px' }}>Bấm vào bất kỳ đâu để đóng. (Ảnh sẽ tự đóng sau 15 giây)</p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
