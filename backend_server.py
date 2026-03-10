@@ -385,54 +385,153 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
 
 @app.get("/api/admin/browser/view")
 async def get_browser_view():
-    """Returns a simple HTML page that embeds noVNC from a CDN."""
+    """Returns noVNC viewer with mobile keyboard support."""
     return HTMLResponse(content=f"""
     <!DOCTYPE html>
     <html>
     <head>
-        <title>Remote Browser View</title>
+        <title>Remote Browser</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
-            body, html, #vnc {{ width: 100%; height: 100%; margin: 0; background: #000; overflow: hidden; }}
-            #status {{ position: fixed; top: 10px; left: 10px; color: #fff; background: rgba(0,0,0,0.7); padding: 5px 10px; font-size: 13px; pointer-events: none; border-radius: 4px; font-family: sans-serif; z-index: 10; }}
+            * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+            body, html {{ width: 100%; height: 100%; background: #111; overflow: hidden; touch-action: manipulation; }}
+            #vnc {{ width: 100%; height: 100%; }}
+            
+            #status {{
+                position: fixed; top: 8px; left: 8px; right: 8px;
+                color: #fff; background: rgba(0,0,0,0.8);
+                padding: 6px 12px; font-size: 12px;
+                border-radius: 6px; font-family: sans-serif; z-index: 20;
+                text-align: center; pointer-events: none;
+            }}
+            
+            /* Floating keyboard button */
+            #kb-btn {{
+                position: fixed; bottom: 15px; right: 15px;
+                width: 50px; height: 50px;
+                background: #2563eb; color: #fff;
+                border: none; border-radius: 50%;
+                font-size: 24px; cursor: pointer;
+                z-index: 30; box-shadow: 0 4px 15px rgba(37,99,235,0.5);
+                display: flex; align-items: center; justify-content: center;
+            }}
+            #kb-btn:active {{ background: #1d4ed8; transform: scale(0.95); }}
+            
+            /* Hidden text input to capture mobile keyboard */
+            #kb-input {{
+                position: fixed; bottom: 0; left: 0;
+                width: 100%; padding: 12px;
+                font-size: 16px; /* Prevents iOS zoom */
+                border: none; border-top: 2px solid #2563eb;
+                background: #1e293b; color: #fff;
+                outline: none; z-index: 25;
+                display: none;
+            }}
+            #kb-input.active {{ display: block; }}
         </style>
     </head>
     <body>
         <div id="vnc"></div>
-        <div id="status">Connecting to VPS...</div>
+        <div id="status">Connecting...</div>
+        <button id="kb-btn" title="Open Keyboard">⌨️</button>
+        <input id="kb-input" type="text" placeholder="Nhập ở đây rồi bấm Enter..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        
         <script type="module">
             import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.3.0/core/rfb.js';
+            import KeyTable from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.3.0/core/input/keysym.js';
+            
             const statusEl = document.getElementById('status');
+            const kbBtn = document.getElementById('kb-btn');
+            const kbInput = document.getElementById('kb-input');
             const url = new URL(window.location);
             const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsPath = url.pathname.replace('/view', '/ws');
+            const token = url.searchParams.get('token');
             
-            const token = localStorage.getItem('fb_id_token') || url.searchParams.get('token');
+            let rfb = null;
             
             function connect() {{
                 try {{
                     statusEl.innerText = "Connecting...";
                     statusEl.style.display = "block";
-                    const rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
+                    
+                    rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
                         wsProtocols: ['binary']
                     }});
                     rfb.scaleViewport = true;
                     rfb.resizeSession = true;
+                    rfb.clipViewport = true;
+                    rfb.showDotCursor = true;
                     
-                    rfb.addEventListener("connect", () => {{ 
-                        statusEl.innerText = "Connected to Browser"; 
-                        setTimeout(() => statusEl.style.display="none", 2000); 
+                    rfb.addEventListener("connect", () => {{
+                        statusEl.innerText = "Connected ✓";
+                        setTimeout(() => statusEl.style.display = "none", 2000);
                     }});
-                    rfb.addEventListener("disconnect", (e) => {{ 
-                        const reason = e.detail.clean ? "Closed" : "Connection Error";
-                        statusEl.innerText = "Disconnected: " + reason; 
+                    rfb.addEventListener("disconnect", (e) => {{
+                        statusEl.innerText = "Disconnected: " + (e.detail.clean ? "Closed" : "Error");
                         statusEl.style.display = "block";
-                        console.log("VNC Disconnect", e);
                     }});
                 }} catch (e) {{
-                    statusEl.innerText = "Setup Error: " + e.message;
+                    statusEl.innerText = "Error: " + e.message;
                 }}
             }}
+            
+            // Virtual keyboard toggle
+            let kbVisible = false;
+            kbBtn.addEventListener('click', () => {{
+                kbVisible = !kbVisible;
+                kbInput.classList.toggle('active', kbVisible);
+                if (kbVisible) {{
+                    kbInput.focus();
+                    kbBtn.textContent = '✕';
+                    kbBtn.style.background = '#dc2626';
+                }} else {{
+                    kbInput.blur();
+                    kbBtn.textContent = '⌨️';
+                    kbBtn.style.background = '#2563eb';
+                }}
+            }});
+            
+            // Send each character typed to VNC
+            kbInput.addEventListener('input', (e) => {{
+                if (!rfb) return;
+                const text = e.data;
+                if (text) {{
+                    for (let i = 0; i < text.length; i++) {{
+                        const code = text.charCodeAt(i);
+                        rfb.sendKey(code, null, true);  // keydown
+                        rfb.sendKey(code, null, false); // keyup
+                    }}
+                }}
+                // Clear the input after sending
+                setTimeout(() => {{ kbInput.value = ''; }}, 50);
+            }});
+            
+            // Handle special keys (Enter, Backspace, Tab)
+            kbInput.addEventListener('keydown', (e) => {{
+                if (!rfb) return;
+                let keysym = null;
+                
+                if (e.key === 'Enter') {{
+                    keysym = 0xff0d; // XK_Return
+                    e.preventDefault();
+                }} else if (e.key === 'Backspace') {{
+                    keysym = 0xff08; // XK_BackSpace
+                    e.preventDefault();
+                }} else if (e.key === 'Tab') {{
+                    keysym = 0xff09; // XK_Tab
+                    e.preventDefault();
+                }} else if (e.key === 'Escape') {{
+                    keysym = 0xff1b; // XK_Escape
+                    e.preventDefault();
+                }}
+                
+                if (keysym) {{
+                    rfb.sendKey(keysym, null, true);
+                    rfb.sendKey(keysym, null, false);
+                }}
+            }});
+            
             connect();
         </script>
     </body>
