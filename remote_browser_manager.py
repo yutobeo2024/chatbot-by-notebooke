@@ -17,7 +17,7 @@ class RemoteBrowserManager:
         self.novnc_proc = None
         self.browser_proc = None
         self.display = ":99"
-        self.user_data_dir = os.path.expanduser("~/.notebooklm-remote-profile")
+        self.user_data_dir = "/tmp/notebooklm-remote-profile"
 
     def _find_binary(self, name):
         """Finds a binary on the system."""
@@ -32,22 +32,37 @@ class RemoteBrowserManager:
         return name
 
     def _cleanup_zombies(self):
-        """Kills any previous hanging processes and removes X11 lock files."""
+        """Kills any previous hanging processes and removes lock files."""
         try:
             # Kill by process names
             for proc in ["Xvfb", "x11vnc", "chromium-browser", "chromium", "google-chrome"]:
                 subprocess.run(["pkill", "-9", "-f", proc], stderr=subprocess.DEV_NULL)
             
-            # Cleanup X11 lock files (Critical for VPS stability)
-            display_num = self.display[1:] # e.g. "99"
+            # Cleanup X11 lock files
+            display_num = self.display[1:]
             lock_files = [f"/tmp/.X{display_num}-lock", f"/tmp/.X11-unix/X{display_num}"]
             for lock in lock_files:
                 if os.path.exists(lock):
                     try:
                         if os.path.isdir(lock): shutil.rmtree(lock)
                         else: os.remove(lock)
-                        sys.stderr.write(f"Removed stale lock: {lock}\n")
                     except: pass
+            
+            # Cleanup Chromium SingletonLock (Critical fix for Permission denied)
+            singleton_lock = os.path.join(self.user_data_dir, "SingletonLock")
+            if os.path.exists(singleton_lock):
+                try: os.remove(singleton_lock)
+                except: pass
+            singleton_cookie = os.path.join(self.user_data_dir, "SingletonCookie")
+            if os.path.exists(singleton_cookie):
+                try: os.remove(singleton_cookie)
+                except: pass
+            singleton_socket = os.path.join(self.user_data_dir, "SingletonSocket")
+            if os.path.exists(singleton_socket):
+                try: os.remove(singleton_socket)
+                except: pass
+                
+            sys.stderr.write(f"[{datetime.now()}] Cleanup completed\n")
         except Exception as e:
             sys.stderr.write(f"Cleanup error: {e}\n")
 
