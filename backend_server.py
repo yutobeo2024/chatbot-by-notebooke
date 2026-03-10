@@ -301,7 +301,7 @@ async def get_browser_logs(user: dict = Depends(verify_firebase_token)):
 
 @app.websocket("/api/admin/browser/ws")
 async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
-    # Authenticate via token query param (since WS doesn't support custom headers easily in all clients)
+    # Authenticate via token query param
     if not token:
         await websocket.close(code=4003)
         return
@@ -311,14 +311,20 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
         if decoded_token.get("email") != ADMIN_EMAIL:
             await websocket.close(code=4003)
             return
-    except:
+    except Exception as e:
+        sys.stderr.write(f"WS Auth Error: {e}\n")
         await websocket.close(code=4003)
         return
 
-    await websocket.accept(subprotocol="binary")
+    # Check for binary subprotocol if requested by noVNC
+    protocols = websocket.headers.get("Sec-WebSocket-Protocol", "").split(",")
+    requested_subprotocol = "binary" if "binary" in [p.strip() for p in protocols] else None
+    
+    await websocket.accept(subprotocol=requested_subprotocol)
     
     try:
         # Tunnel to local VNC server (RFB)
+        # Using 127.0.0.1 for maximum stability
         reader, writer = await asyncio.open_connection("127.0.0.1", 5901)
         
         async def ws_to_vnc():
@@ -333,17 +339,30 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
         async def vnc_to_ws():
             try:
                 while True:
-                    data = await reader.read(4096)
+                    # Larger buffer for smoother remote view
+                    data = await reader.read(8192)
                     if not data: break
                     await websocket.send_bytes(data)
             except:
                 pass
 
-        await asyncio.gather(ws_to_vnc(), vnc_to_ws())
+        # Run both tasks concurrently and wait for either to finish
+        tasks = [asyncio.create_task(ws_to_vnc()), asyncio.create_task(vnc_to_ws())]
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        
+        # Cleanup
+        for task in pending:
+            task.cancel()
+        
+        writer.close()
+        try: await writer.wait_closed()
+        except: pass
+
     except Exception as e:
-        print(f"VNC Proxy Error: {e}")
+        sys.stderr.write(f"VNC Proxy Connection Failed: {e}\n")
     finally:
-        await websocket.close()
+        try: await websocket.close()
+        except: pass
 
 @app.get("/api/admin/browser/view")
 async def get_browser_view():
@@ -353,15 +372,15 @@ async def get_browser_view():
     <html>
     <head>
         <title>Remote Browser View</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <style>
             body, html, #vnc {{ width: 100%; height: 100%; margin: 0; background: #000; overflow: hidden; }}
-            #status {{ position: fixed; top: 10px; left: 10px; color: #fff; background: rgba(0,0,0,0.5); padding: 5px; font-size: 12px; pointer-events: none; }}
+            #status {{ position: fixed; top: 10px; left: 10px; color: #fff; background: rgba(0,0,0,0.7); padding: 5px 10px; font-size: 13px; pointer-events: none; border-radius: 4px; font-family: sans-serif; z-index: 10; }}
         </style>
     </head>
     <body>
         <div id="vnc"></div>
-        <div id="status">Connecting...</div>
+        <div id="status">Connecting to VPS...</div>
         <script type="module">
             import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.3.0/core/rfb.js';
             const statusEl = document.getElementById('status');
@@ -369,22 +388,33 @@ async def get_browser_view():
             const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsPath = url.pathname.replace('/view', '/ws');
             
-            // Try to get token from storage or URL
             const token = localStorage.getItem('fb_id_token') || url.searchParams.get('token');
             
-            try {{
-                const rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
-                    wsProtocols: ['binary']
-                }});
-                rfb.scaleViewport = true;
-                rfb.resizeSession = true;
-                
-                rfb.addEventListener("connect", () => {{ statusEl.innerText = "Connected"; setTimeout(() => statusEl.style.display="none", 2000); }});
-                rfb.addEventListener("disconnect", (e) => {{ statusEl.innerText = "Disconnected: " + e.detail.reason; statusEl.style.display="block"; }});
-                rfb.addEventListener("credentialsrequired", () => {{ statusEl.innerText = "Credentials Required"; }});
-            }} catch (e) {{
-                statusEl.innerText = "Error: " + e.message;
+            function connect() {{
+                try {{
+                    statusEl.innerText = "Connecting...";
+                    statusEl.style.display = "block";
+                    const rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
+                        wsProtocols: ['binary']
+                    }});
+                    rfb.scaleViewport = true;
+                    rfb.resizeSession = true;
+                    
+                    rfb.addEventListener("connect", () => {{ 
+                        statusEl.innerText = "Connected to Browser"; 
+                        setTimeout(() => statusEl.style.display="none", 2000); 
+                    }});
+                    rfb.addEventListener("disconnect", (e) => {{ 
+                        const reason = e.detail.clean ? "Closed" : "Connection Error";
+                        statusEl.innerText = "Disconnected: " + reason; 
+                        statusEl.style.display = "block";
+                        console.log("VNC Disconnect", e);
+                    }});
+                }} catch (e) {{
+                    statusEl.innerText = "Setup Error: " + e.message;
+                }}
             }}
+            connect();
         </script>
     </body>
     </html>

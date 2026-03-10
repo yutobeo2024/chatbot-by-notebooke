@@ -74,9 +74,10 @@ class RemoteBrowserManager:
         sys.stderr.write(f"[{datetime.now()}] Starting x11vnc on port {self.port_vnc}...\n")
         try:
             self.vnc_proc = subprocess.Popen([
-                vnc_path, "-display", self.display, "-nopw", "-listen", "127.0.0.1", "-rfbport", str(self.port_vnc), "-forever", "-shared"
+                vnc_path, "-display", self.display, "-nopw", "-localhost", "-rfbport", str(self.port_vnc), "-forever", "-shared", "-bg"
             ])
-            time.sleep(1.5)
+            time.sleep(2)
+            # Check if VNC is actually listening
             if self.vnc_proc.poll() is not None:
                 raise Exception(f"x11vnc failed to start. Return code: {self.vnc_proc.returncode}")
         except Exception as e:
@@ -105,9 +106,14 @@ class RemoteBrowserManager:
                 "--no-first-run",
                 "--password-store=basic",
                 "--lang=en-US",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--proxy-server='direct://'",
+                "--proxy-bypass-list='*'",
                 "https://notebooklm.google.com"
             ], stdout=log_file, stderr=log_file)
-            time.sleep(2)
+            time.sleep(3)
             if self.browser_proc.poll() is not None:
                  sys.stderr.write(f"[{datetime.now()}] Chromium failed to start or exited quickly. Check /tmp/chromium_remote.log\n")
         except Exception as e:
