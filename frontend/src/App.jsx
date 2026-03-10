@@ -76,6 +76,7 @@ function App() {
   const authFileRef = useRef(null)
 
   const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8042'
+  const ADMIN_EMAIL = 'yduoc407@gmail.com'
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -90,8 +91,12 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser)
       if (currentUser) {
-        fetchAuthStatus()
-        fetchWhitelist()
+        if (currentUser.email === ADMIN_EMAIL) {
+          fetchAuthStatus()
+          fetchWhitelist()
+        } else {
+          setShowAdmin(false)
+        }
       }
     })
     return () => unsubscribe()
@@ -422,9 +427,11 @@ function App() {
           {user ? (
             <div className="user-info">
               <span>{user.email}</span>
-              <button onClick={() => setShowAdmin(!showAdmin)} className="admin-btn">
-                {showAdmin ? 'Về Chat' : 'Admin'}
-              </button>
+              {user.email === ADMIN_EMAIL && (
+                <button onClick={() => setShowAdmin(!showAdmin)} className="admin-btn">
+                  {showAdmin ? 'Về Chat' : 'Admin'}
+                </button>
+              )}
               <button onClick={handleLogout} className="logout-link">Thoát</button>
             </div>
           ) : (
@@ -471,7 +478,7 @@ function App() {
 
       {/* Main Chat Area or Admin Dashboard */}
       <div className="chat-area">
-        {showAdmin ? (
+        {showAdmin && user?.email === ADMIN_EMAIL ? (
           <div className="admin-dashboard">
             <div className="chat-header">
               <button className="menu-toggle" onClick={() => setIsSidebarOpen(true)}>

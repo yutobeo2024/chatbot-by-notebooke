@@ -29,6 +29,7 @@ else:
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "modules_config.json")
 WHITELIST_PATH = os.path.join(os.path.dirname(__file__), "whitelist.json")
+ADMIN_EMAIL = "yduoc407@gmail.com"
 EXECUTION_SCRIPT = os.path.join(os.path.dirname(__file__), "execution", "notebooklm_query.py")
 
 class ChatRequest(BaseModel):
@@ -52,10 +53,14 @@ async def verify_firebase_token(authorization: Optional[str] = Header(None)):
         # Use verify_id_token ONLY if firebase-adminsdk.json is present
         if firebase_admin._apps:
             decoded_token = auth.verify_id_token(token)
-            return decoded_token
+            return {
+                "uid": decoded_token["uid"],
+                "email": decoded_token.get("email"),
+                "is_admin": decoded_token.get("email") == ADMIN_EMAIL
+            }
         else:
             # Fallback for local testing if SDK is still missing
-            return {"uid": "local_test_user", "email": "admin@localhost"}
+            return {"uid": "local_test_user", "email": "admin@localhost", "is_admin": "admin@localhost" == ADMIN_EMAIL}
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
@@ -83,17 +88,18 @@ async def get_modules():
     return config["modules"]
 
 @app.post("/api/admin/modules")
-async def update_modules(config_update: ConfigUpdate, user=Depends(verify_firebase_token)):
-    # Basic Admin check: You can restrict this to specific emails or custom claims
-    # if user.get("email") != "your-admin-email@example.com":
-    #     raise HTTPException(status_code=403, detail="Permission denied")
+async def update_modules(config_update: ConfigUpdate, user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     
     config = {"modules": {k: v.dict() for k, v in config_update.modules.items()}}
     save_config(config)
     return {"status": "success", "message": "Configuration updated"}
 
 @app.post("/api/admin/reauth")
-async def reauth_notebooklm(user=Depends(verify_firebase_token)):
+async def reauth_notebooklm(user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     try:
         # Run notebooklm-mcp-auth using subprocess
         # Working directory is the root of the project to ensure correct context if needed
@@ -113,26 +119,45 @@ async def reauth_notebooklm(user=Depends(verify_firebase_token)):
         raise HTTPException(status_code=500, detail=f"Lỗi hệ thống khi chạy lệnh xác thực: {str(e)}")
 
 @app.get("/api/admin/whitelist")
-async def get_whitelist(user=Depends(verify_firebase_token)):
-    return load_whitelist()
+async def get_whitelist(user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if not os.path.exists(WHITELIST_PATH):
+        return []
+    with open(WHITELIST_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 @app.post("/api/admin/whitelist")
-async def add_to_whitelist(data: dict, user=Depends(verify_firebase_token)):
+async def add_to_whitelist(data: dict, user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     email = data.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="Thiếu email")
-    whitelist = load_whitelist()
+    
+    whitelist = []
+    if os.path.exists(WHITELIST_PATH):
+        with open(WHITELIST_PATH, "r", encoding="utf-8") as f:
+            whitelist = json.load(f)
+    
     if email not in whitelist:
         whitelist.append(email)
-        save_whitelist(whitelist)
+        with open(WHITELIST_PATH, "w", encoding="utf-8") as f:
+            json.dump(whitelist, f, indent=2, ensure_ascii=False)
+    
     return {"status": "success", "message": f"Đã thêm {email} vào danh sách"}
 
 @app.delete("/api/admin/whitelist/{email}")
-async def remove_from_whitelist(email: str, user=Depends(verify_firebase_token)):
-    whitelist = load_whitelist()
-    if email in whitelist:
-        whitelist.remove(email)
-        save_whitelist(whitelist)
+async def remove_from_whitelist(email: str, user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    if os.path.exists(WHITELIST_PATH):
+        with open(WHITELIST_PATH, "r", encoding="utf-8") as f:
+            whitelist = json.load(f)
+        if email in whitelist:
+            whitelist.remove(email)
+            with open(WHITELIST_PATH, "w", encoding="utf-8") as f:
+                json.dump(whitelist, f, indent=2, ensure_ascii=False)
     return {"status": "success", "message": f"Đã xóa {email} khỏi danh sách"}
 
 @app.get("/api/check-whitelist")
@@ -141,8 +166,10 @@ async def check_whitelist(email: str):
     return {"allowed": email in whitelist}
 
 @app.post("/api/admin/upload-auth")
-async def upload_auth_file(file: UploadFile = File(...), user=Depends(verify_firebase_token)):
+async def upload_auth_file(file: UploadFile = File(...), user: dict = Depends(verify_firebase_token)):
     """Upload auth.json file to update NotebookLM authentication credentials."""
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     if not file.filename.endswith('.json'):
         raise HTTPException(status_code=400, detail="Chỉ chấp nhận file .json")
     try:
@@ -162,8 +189,10 @@ async def upload_auth_file(file: UploadFile = File(...), user=Depends(verify_fir
         raise HTTPException(status_code=500, detail=f"Lỗi khi lưu file: {str(e)}")
 
 @app.get("/api/admin/auth-status")
-async def get_auth_status(user=Depends(verify_firebase_token)):
+async def get_auth_status(user: dict = Depends(verify_firebase_token)):
     """Check the status of the NotebookLM auth file."""
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
     auth_path = os.path.expanduser("~/.notebooklm-mcp/auth.json")
     if os.path.exists(auth_path):
         mtime = os.path.getmtime(auth_path)
