@@ -204,6 +204,36 @@ class RemoteBrowserManager:
                 
                 context = browser.contexts[0]
                 cookies_list = await context.cookies()
+                
+                # NEW: Extract CSRF token (SNlM0e) and Session ID (FdrFJe)
+                csrf_token = ""
+                session_id = ""
+                try:
+                    # Find a notebooklm page or create one
+                    page = None
+                    for p in context.pages:
+                        if "notebooklm.google.com" in p.url:
+                            page = p
+                            break
+                    
+                    if not page:
+                        page = await context.new_page()
+                        await page.goto("https://notebooklm.google.com", timeout=15000)
+                    
+                    # Extract from WIZ_global_data (SNlM0e is the CSRF token)
+                    # and FdrFJe (Session ID)
+                    tokens = await page.evaluate("""() => {
+                        const data = window.WIZ_global_data || {};
+                        return {
+                            at: data.SNlM0e || '',
+                            sid: data.FdrFJe || new URLSearchParams(window.location.search).get('f.sid') || ''
+                        };
+                    }""")
+                    csrf_token = tokens.get('at', '')
+                    session_id = tokens.get('sid', '')
+                except Exception as e:
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: CSRF/SID extraction failed (non-critical): {e}\n")
+
                 await browser.close() 
 
                 if cookies_list:
@@ -217,15 +247,15 @@ class RemoteBrowserManager:
                     # Wrap in the format expected by AuthTokens.from_dict
                     auth_data = {
                         "cookies": cookies_dict,
-                        "csrf_token": "",   # Optional, auto-extracted by client
-                        "session_id": "",   # Optional
+                        "csrf_token": csrf_token,
+                        "session_id": session_id,
                         "extracted_at": time.time()
                     }
                     
                     with open(auth_path, "w", encoding="utf-8") as f:
                         json.dump(auth_data, f, indent=2)
                     
-                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Tokens saved successfully ({len(cookies_dict)} cookies).\n")
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Tokens saved successfully ({len(cookies_dict)} cookies, CSRF: {'Yes' if csrf_token else 'No'}).\n")
                     return True
                 else:
                     sys.stderr.write(f"[{datetime.now()}] Remote Auth: No cookies retrieved from browser.\n")
