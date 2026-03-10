@@ -203,21 +203,33 @@ class RemoteBrowserManager:
                     return False
                 
                 context = browser.contexts[0]
-                cookies = await context.cookies()
+                cookies_list = await context.cookies()
                 await browser.close() 
 
-                if cookies:
+                if cookies_list:
+                    # Convert Playwright list[dict] to simple dict[name, value]
+                    cookies_dict = {c['name']: c['value'] for c in cookies_list}
+                    
                     auth_dir = os.path.expanduser("~/.notebooklm-mcp")
                     os.makedirs(auth_dir, exist_ok=True)
                     auth_path = os.path.join(auth_dir, "auth.json")
                     
-                    with open(auth_path, "w", encoding="utf-8") as f:
-                        json.dump(cookies, f, indent=2)
+                    # Wrap in the format expected by AuthTokens.from_dict
+                    auth_data = {
+                        "cookies": cookies_dict,
+                        "csrf_token": "",   # Optional, auto-extracted by client
+                        "session_id": "",   # Optional
+                        "extracted_at": time.time()
+                    }
                     
-                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Cookies extracted successfully ({len(cookies)} cookies).\n")
+                    with open(auth_path, "w", encoding="utf-8") as f:
+                        json.dump(auth_data, f, indent=2)
+                    
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Tokens saved successfully ({len(cookies_dict)} cookies).\n")
                     return True
                 else:
                     sys.stderr.write(f"[{datetime.now()}] Remote Auth: No cookies retrieved from browser.\n")
+                    return False
         except Exception as e:
             sys.stderr.write(f"[{datetime.now()}] Remote Auth Extraction Failed: {str(e)}\n")
             return False
