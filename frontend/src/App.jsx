@@ -138,7 +138,11 @@ function App() {
         }
       })
       const data = await response.json()
-      setWhitelist(data)
+      if (Array.isArray(data)) {
+        setWhitelist(data)
+      } else {
+        console.error('Whitelist data is not an array:', data)
+      }
     } catch (err) {
       console.error('Failed to fetch whitelist', err)
     }
@@ -448,7 +452,7 @@ function App() {
 
         {!showAdmin && (
           <ul className="module-list">
-            {Object.entries(modules).map(([id, module]) => (
+            {modules && Object.entries(modules).map(([id, module]) => (
               <li
                 key={id}
                 className={`module-item ${activeModuleId === id ? 'active' : ''}`}
@@ -533,7 +537,7 @@ function App() {
             <div className="admin-section">
               <h3>Cấu hình Module</h3>
               <div className="admin-content">
-                {Object.entries(newConfigs).map(([id, config]) => (
+                {newConfigs && Object.entries(newConfigs).map(([id, config]) => (
                   <div key={id} className="admin-card">
                     <h3>{config.name}</h3>
                     <label>Notebook ID:</label>
