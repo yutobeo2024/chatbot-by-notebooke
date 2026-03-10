@@ -218,21 +218,38 @@ class RemoteBrowserManager:
                     
                     if not page:
                         page = await context.new_page()
-                        await page.goto("https://notebooklm.google.com", timeout=15000)
+                        await page.goto("https://notebooklm.google.com", timeout=20000, wait_until="networkidle")
                     
-                    # Extract from WIZ_global_data (SNlM0e is the CSRF token)
-                    # and FdrFJe (Session ID)
-                    tokens = await page.evaluate("""() => {
-                        const data = window.WIZ_global_data || {};
-                        return {
-                            at: data.SNlM0e || '',
-                            sid: data.FdrFJe || new URLSearchParams(window.location.search).get('f.sid') || ''
-                        };
-                    }""")
-                    csrf_token = tokens.get('at', '')
-                    session_id = tokens.get('sid', '')
+                    # Wait a bit for WIZ_global_data to populate if needed
+                    for attempt in range(3):
+                        tokens = await page.evaluate("""() => {
+                            const data = window.WIZ_global_data || {};
+                            return {
+                                at: data.SNlM0e || '',
+                                sid: data.FdrFJe || new URLSearchParams(window.location.search).get('f.sid') || ''
+                            };
+                        }""")
+                        csrf_token = tokens.get('at', '')
+                        session_id = tokens.get('sid', '')
+                        if csrf_token: break
+                        await asyncio.sleep(2)
+                        
+                    # Fallback: if still no CSRF, try to refresh the page once
+                    if not csrf_token:
+                        sys.stderr.write(f"[{datetime.now()}] Remote Auth: CSRF not found, refreshing page...\n")
+                        await page.reload(timeout=20000, wait_until="networkidle")
+                        tokens = await page.evaluate("""() => {
+                            const data = window.WIZ_global_data || {};
+                            return {
+                                at: data.SNlM0e || '',
+                                sid: data.FdrFJe || ''
+                            };
+                        }""")
+                        csrf_token = tokens.get('at', '')
+                        session_id = tokens.get('sid', '')
+
                 except Exception as e:
-                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: CSRF/SID extraction failed (non-critical): {e}\n")
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: CSRF/SID extraction failed: {e}\n")
 
                 await browser.close() 
 
@@ -255,7 +272,7 @@ class RemoteBrowserManager:
                     with open(auth_path, "w", encoding="utf-8") as f:
                         json.dump(auth_data, f, indent=2)
                     
-                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Tokens saved successfully ({len(cookies_dict)} cookies, CSRF: {'Yes' if csrf_token else 'No'}).\n")
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: Tokens saved ({len(cookies_dict)} cookies, CSRF: {'Yes' if csrf_token else 'No'}).\n")
                     return True
                 else:
                     sys.stderr.write(f"[{datetime.now()}] Remote Auth: No cookies retrieved from browser.\n")

@@ -675,7 +675,22 @@ function App() {
                   <button onClick={() => { const url = browserUrl; setBrowserUrl(''); setTimeout(() => setBrowserUrl(url), 100); }} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>🔄 Tải lại trang</button>
                   <button onClick={checkBrowserScreenshot} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#1e40af' }}>🖼️ Kiểm tra màn hình</button>
                   <button onClick={stopRemoteBrowser} className="save-btn" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Đóng trình duyệt</button>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>
+
+                  {authUploadMsg && (
+                    <div style={{
+                      padding: '4px 12px',
+                      borderRadius: '6px',
+                      backgroundColor: authUploadMsg.startsWith('❌') ? '#fee2e2' : '#d1fae5',
+                      color: authUploadMsg.startsWith('❌') ? '#991b1b' : '#065f46',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      border: '1px solid currentColor'
+                    }}>
+                      {authUploadMsg}
+                    </div>
+                  )}
+
+                  <span style={{ fontSize: '11px', color: '#64748b', marginLeft: 'auto' }}>
                     Đăng nhập Google xong hãy bấm "Lấy chìa khóa". <br />
                     *Nếu màn hình đen lâu, hãy bấm "Tải lại trang" hoặc "Kiểm tra màn hình".
                   </span>
