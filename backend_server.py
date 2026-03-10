@@ -242,9 +242,9 @@ async def heartbeat_task():
                 if client:
                     # Just a small ping to keep session warm
                     client.get_notebook(nb_id)
-                    # sys.stderr.write("Heartbeat: Session refreshed successfully.\n")
-        except Exception:
-            # sys.stderr.write(f"Heartbeat failed: {str(e)}\n")
+                    sys.stderr.write(f"[{datetime.now()}] Heartbeat: Session refreshed successfully.\n")
+        except Exception as e:
+            sys.stderr.write(f"[{datetime.now()}] Heartbeat failed: {str(e)}\n")
             pass
         
         # Sleep for 30 minutes
