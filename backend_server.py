@@ -1,6 +1,7 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, WebSocket, WebSocketDisconnect, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import subprocess
@@ -260,35 +261,36 @@ async def startup_event():
 browser_manager = RemoteBrowserManager()
 
 @app.post("/api/admin/browser/start")
-async def start_browser(user: dict = Depends(verify_firebase_token)):
+async def start_remote_browser(user: dict = Depends(verify_firebase_token)):
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
-    try:
-        port = browser_manager.start()
-        # Return the noVNC URL. Assuming it's accessed via the same host
-        # In production, this might need a secure tunnel or proxy path
-        return {"status": "success", "port": port, "message": "Browser started"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    
+    sys.stderr.write(f"[{datetime.now()}] Admin browser start requested by {user.get('email')}\n")
+    port = browser_manager.start()
+    if not port:
+        raise HTTPException(status_code=500, detail="Failed to start virtual browser. check VPS logs.")
+    return {"status": "success", "port": port}
 
 @app.post("/api/admin/browser/stop")
-async def stop_browser(user: dict = Depends(verify_firebase_token)):
+async def stop_remote_browser(user: dict = Depends(verify_firebase_token)):
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
+    sys.stderr.write(f"[{datetime.now()}] Admin browser stop requested\n")
     browser_manager.stop()
-    return {"status": "success", "message": "Browser stopped"}
+    return {"status": "success"}
 
 @app.post("/api/admin/browser/extract")
 async def extract_browser_cookies(user: dict = Depends(verify_firebase_token)):
     if not user.get("is_admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
+    sys.stderr.write(f"[{datetime.now()}] Admin cookie extraction started\n")
     success = await browser_manager.extract_cookies()
     if success:
         return {"status": "success", "message": "✅ Đã tự động cập nhật auth.json từ trình duyệt ảo!"}
     else:
         # Get logs to help debug
         logs = browser_manager.get_logs()
-        return {"status": "error", "message": f"❌ Lỗi: Không thể lấy chìa khóa. Bạn đã đăng nhập vào NotebookLM chưa?\n\nDebug Logs:\n{logs[-500:]}"}
+        return {"status": "error", "message": f"❌ Lỗi: Không thể lấy chìa khóa. Bạn đã đăng nhập vào NotebookLM chưa?\n\nDebug Logs:\n{logs[-1000:]}"}
 
 @app.get("/api/admin/browser/logs")
 async def get_browser_logs(user: dict = Depends(verify_firebase_token)):
@@ -345,31 +347,47 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
 @app.get("/api/admin/browser/view")
 async def get_browser_view():
     """Returns a simple HTML page that embeds noVNC from a CDN."""
-    return StreamingResponse(asyncio.to_thread(lambda: f"""
+    return HTMLResponse(content=f"""
     <!DOCTYPE html>
     <html>
     <head>
         <title>Remote Browser View</title>
-        <style>body, html, #vnc {{ width: 100%; height: 100%; margin: 0; background: #000; overflow: hidden; }}</style>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+            body, html, #vnc {{ width: 100%; height: 100%; margin: 0; background: #000; overflow: hidden; }}
+            #status {{ position: fixed; top: 10px; left: 10px; color: #fff; background: rgba(0,0,0,0.5); padding: 5px; font-size: 12px; pointer-events: none; }}
+        </style>
     </head>
     <body>
         <div id="vnc"></div>
+        <div id="status">Connecting...</div>
         <script type="module">
             import RFB from 'https://cdn.jsdelivr.net/npm/@novnc/novnc@1.3.0/core/rfb.js';
+            const statusEl = document.getElementById('status');
             const url = new URL(window.location);
             const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsPath = url.pathname.replace('/view', '/ws');
-            // We'll need the token from the parent or storage
+            
+            // Try to get token from storage or URL
             const token = localStorage.getItem('fb_id_token') || url.searchParams.get('token');
-            const rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
-                wsProtocols: ['binary']
-            }});
-            rfb.scaleViewport = true;
-            rfb.resizeSession = true;
+            
+            try {{
+                const rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
+                    wsProtocols: ['binary']
+                }});
+                rfb.scaleViewport = true;
+                rfb.resizeSession = true;
+                
+                rfb.addEventListener("connect", () => {{ statusEl.innerText = "Connected"; setTimeout(() => statusEl.style.display="none", 2000); }});
+                rfb.addEventListener("disconnect", (e) => {{ statusEl.innerText = "Disconnected: " + e.detail.reason; statusEl.style.display="block"; }});
+                rfb.addEventListener("credentialsrequired", () => {{ statusEl.innerText = "Credentials Required"; }});
+            }} catch (e) {{
+                statusEl.innerText = "Error: " + e.message;
+            }}
         </script>
     </body>
     </html>
-    """.encode('utf-8')), media_type="text/html")
+    """)
 
 # In-memory session store
 conversation_map = {}
