@@ -342,8 +342,6 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
     await websocket.accept(subprotocol=requested_subprotocol)
     
     try:
-        # Tunnel to local VNC server (RFB)
-        # Using 127.0.0.1 for maximum stability
         reader, writer = await asyncio.open_connection("127.0.0.1", 5901)
         
         async def ws_to_vnc():
@@ -352,24 +350,34 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
                     data = await websocket.receive_bytes()
                     writer.write(data)
                     await writer.drain()
-            except:
-                pass
+            except Exception as e:
+                sys.stderr.write(f"ws_to_vnc ended: {type(e).__name__}\n")
 
         async def vnc_to_ws():
             try:
                 while True:
-                    # Larger buffer for smoother remote view
-                    data = await reader.read(8192)
+                    data = await reader.read(16384)
                     if not data: break
                     await websocket.send_bytes(data)
+            except Exception as e:
+                sys.stderr.write(f"vnc_to_ws ended: {type(e).__name__}\n")
+
+        async def keep_alive():
+            """Send WebSocket ping every 10s to prevent Cloudflare/proxy timeout during 2FA."""
+            try:
+                while True:
+                    await asyncio.sleep(10)
+                    await websocket.send_bytes(b'')  # Empty binary frame as keepalive
             except:
                 pass
 
-        # Run both tasks concurrently and wait for either to finish
-        tasks = [asyncio.create_task(ws_to_vnc()), asyncio.create_task(vnc_to_ws())]
+        tasks = [
+            asyncio.create_task(ws_to_vnc()),
+            asyncio.create_task(vnc_to_ws()),
+            asyncio.create_task(keep_alive())
+        ]
         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         
-        # Cleanup
         for task in pending:
             task.cancel()
         
@@ -378,14 +386,14 @@ async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
         except: pass
 
     except Exception as e:
-        sys.stderr.write(f"VNC Proxy Connection Failed: {e}\n")
+        sys.stderr.write(f"VNC Proxy Error: {e}\n")
     finally:
         try: await websocket.close()
         except: pass
 
 @app.get("/api/admin/browser/view")
 async def get_browser_view():
-    """Returns noVNC viewer with mobile keyboard support."""
+    """Returns noVNC viewer with mobile keyboard support and auto-reconnect."""
     return HTMLResponse(content=f"""
     <!DOCTYPE html>
     <html>
@@ -449,15 +457,21 @@ async def get_browser_view():
             const token = url.searchParams.get('token');
             
             let rfb = null;
+            let reconnectAttempts = 0;
             
             function connect() {{
                 try {{
-                    statusEl.innerText = "Connecting...";
+                    if (rfb) {{
+                        try {{ rfb.disconnect(); }} catch(e) {{}}
+                    }}
+                    
+                    statusEl.innerText = reconnectAttempts > 0 ? `Reconnecting (${{reconnectAttempts}}/10)...` : "Connecting...";
                     statusEl.style.display = "block";
                     
                     rfb = new RFB(document.getElementById('vnc'), `${{protocol}}//${{url.host}}${{wsPath}}?token=${{token}}`, {{
                         wsProtocols: ['binary']
                     }});
+                    
                     rfb.scaleViewport = true;
                     rfb.resizeSession = true;
                     rfb.clipViewport = true;
@@ -465,11 +479,21 @@ async def get_browser_view():
                     
                     rfb.addEventListener("connect", () => {{
                         statusEl.innerText = "Connected ✓";
+                        reconnectAttempts = 0;
                         setTimeout(() => statusEl.style.display = "none", 2000);
                     }});
+                    
                     rfb.addEventListener("disconnect", (e) => {{
-                        statusEl.innerText = "Disconnected: " + (e.detail.clean ? "Closed" : "Error");
+                        const reason = e.detail.clean ? "Closed" : "Error";
+                        statusEl.innerText = `Disconnected (${{reason}}). Reconnecting...`;
                         statusEl.style.display = "block";
+                        
+                        if (reconnectAttempts < 10) {{
+                            reconnectAttempts++;
+                            setTimeout(connect, 3000);
+                        }} else {{
+                            statusEl.innerText = "Connection lost. Please reload page.";
+                        }}
                     }});
                 }} catch (e) {{
                     statusEl.innerText = "Error: " + e.message;
@@ -499,36 +523,26 @@ async def get_browser_view():
                 if (text) {{
                     for (let i = 0; i < text.length; i++) {{
                         const code = text.charCodeAt(i);
-                        rfb.sendKey(code, null, true);  // keydown
-                        rfb.sendKey(code, null, false); // keyup
+                        rfb.sendKey(code, null, true);
+                        rfb.sendKey(code, null, false);
                     }}
                 }}
-                // Clear the input after sending
                 setTimeout(() => {{ kbInput.value = ''; }}, 50);
             }});
             
-            // Handle special keys (Enter, Backspace, Tab)
+            // Handle special keys
             kbInput.addEventListener('keydown', (e) => {{
                 if (!rfb) return;
                 let keysym = null;
-                
-                if (e.key === 'Enter') {{
-                    keysym = 0xff0d; // XK_Return
-                    e.preventDefault();
-                }} else if (e.key === 'Backspace') {{
-                    keysym = 0xff08; // XK_BackSpace
-                    e.preventDefault();
-                }} else if (e.key === 'Tab') {{
-                    keysym = 0xff09; // XK_Tab
-                    e.preventDefault();
-                }} else if (e.key === 'Escape') {{
-                    keysym = 0xff1b; // XK_Escape
-                    e.preventDefault();
-                }}
+                if (e.key === 'Enter') keysym = 0xff0d;
+                else if (e.key === 'Backspace') keysym = 0xff08;
+                else if (e.key === 'Tab') keysym = 0xff09;
+                else if (e.key === 'Escape') keysym = 0xff1b;
                 
                 if (keysym) {{
                     rfb.sendKey(keysym, null, true);
                     rfb.sendKey(keysym, null, false);
+                    e.preventDefault();
                 }}
             }});
             
