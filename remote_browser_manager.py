@@ -57,7 +57,7 @@ class RemoteBrowserManager:
         vnc_path = self._find_binary("x11vnc")
         browser_path = self._find_binary("chromium-browser") or self._find_binary("chromium")
 
-        # 1. Start Xvfb
+        # 1. Start Xvfb (Higher resolution for better experience)
         sys.stderr.write(f"[{datetime.now()}] Starting Xvfb on {self.display}...\n")
         self.xvfb_proc = subprocess.Popen([xvfb_path, self.display, "-screen", "0", "1280x1024x24"])
         os.environ["DISPLAY"] = self.display
@@ -70,20 +70,13 @@ class RemoteBrowserManager:
         ])
         time.sleep(2)
 
-        # 3. Start noVNC (websockify)
-        novnc_path = "/usr/share/novnc/utils/novnc_proxy"
-        if not os.path.exists(novnc_path):
-            novnc_path = shutil.which("novnc_proxy") or "novnc_proxy"
-
-        sys.stderr.write(f"[{datetime.now()}] Starting noVNC on port {self.port_web}...\n")
-        self.novnc_proc = subprocess.Popen([
-            novnc_path, "--vnc", f"localhost:{self.port_vnc}", "--listen", str(self.port_web)
-        ])
-        time.sleep(2)
-
-        # 4. Start Chromium
+        # 3. Start Chromium with logging
         sys.stderr.write(f"[{datetime.now()}] Starting Chromium at {browser_path}...\n")
         os.makedirs(self.user_data_dir, exist_ok=True)
+        
+        # Open log file
+        log_file = open("/tmp/chromium_remote.log", "w")
+        
         self.browser_proc = subprocess.Popen([
             browser_path,
             "--no-sandbox",
@@ -95,10 +88,18 @@ class RemoteBrowserManager:
             "--disable-software-rasterizer",
             "--disable-dev-shm-usage",
             "--no-first-run",
+            "--password-store=basic",
             "https://notebooklm.google.com"
-        ])
+        ], stdout=log_file, stderr=log_file)
 
         return self.port_web
+
+    def get_logs(self):
+        """Returns the last lines of the chromium log."""
+        if os.path.exists("/tmp/chromium_remote.log"):
+            with open("/tmp/chromium_remote.log", "r") as f:
+                return f.read()[-2000:]
+        return "No logs found."
 
     def stop(self):
         """Stops all processes."""

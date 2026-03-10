@@ -75,6 +75,8 @@ function App() {
   const [showBrowser, setShowBrowser] = useState(false)
   const [browserUrl, setBrowserUrl] = useState('')
   const [isBrowserLoading, setIsBrowserLoading] = useState(false)
+  const [browserLogs, setBrowserLogs] = useState('')
+  const [showLogs, setShowLogs] = useState(false)
   const [whitelist, setWhitelist] = useState([])
   const [newWhitelistEmail, setNewWhitelistEmail] = useState('')
   const authFileRef = useRef(null)
@@ -250,6 +252,7 @@ function App() {
 
   const extractBrowserCookies = async () => {
     setAuthUploadMsg('⏳ Đang lấy chìa khóa...')
+    setBrowserLogs('')
     try {
       const token = await user.getIdToken()
       const res = await fetch(`${API_URL}/api/admin/browser/extract`, {
@@ -257,10 +260,28 @@ function App() {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       const data = await res.json()
-      setAuthUploadMsg(data.status === 'success' ? data.message : '❌ ' + data.message)
-      if (data.status === 'success') fetchAuthStatus()
+      setAuthUploadMsg(data.status === 'success' ? data.message : '❌ Thất bại.')
+      if (data.status === 'success') {
+        fetchAuthStatus()
+      } else if (data.message.includes('Debug Logs:')) {
+        setBrowserLogs(data.message.split('Debug Logs:')[1])
+      }
     } catch (err) {
       setAuthUploadMsg('❌ Lỗi kết nối.')
+    }
+  }
+
+  const fetchBrowserLogs = async () => {
+    try {
+      const token = await user.getIdToken()
+      const res = await fetch(`${API_URL}/api/admin/browser/logs`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      const data = await res.json()
+      setBrowserLogs(data.logs)
+      setShowLogs(true)
+    } catch (err) {
+      alert('Lỗi tải nhật ký.')
     }
   }
 
@@ -609,22 +630,39 @@ function App() {
               )}
             </div>
             {authUploadMsg && (
-              <div style={{ padding: '8px 16px', margin: '0 16px', borderRadius: '8px', backgroundColor: authUploadMsg.startsWith('❌') ? '#fee2e2' : '#d1fae5', color: authUploadMsg.startsWith('❌') ? '#991b1b' : '#065f46', fontSize: '14px' }}>
-                {authUploadMsg}
+              <div style={{ padding: '8px 16px', margin: '0 16px', borderRadius: '8px', backgroundColor: authUploadMsg.startsWith('❌') ? '#fee2e2' : '#d1fae5', color: authUploadMsg.startsWith('❌') ? '#991b1b' : '#065f46', fontSize: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{authUploadMsg}</span>
+                {authUploadMsg.startsWith('❌') && !showLogs && (
+                  <button onClick={fetchBrowserLogs} style={{ background: 'none', border: '1px solid #991b1b', color: '#991b1b', padding: '2px 8px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>Xem nhật ký lỗi</button>
+                )}
+              </div>
+            )}
+
+            {showLogs && (
+              <div style={{ margin: '10px 16px', padding: '10px', backgroundColor: '#0f172a', color: '#38bdf8', borderRadius: '8px', fontSize: '12px', maxHeight: '200px', overflow: 'auto', fontFamily: 'monospace' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                  <strong>VPS Logs:</strong>
+                  <button onClick={() => setShowLogs(false)} style={{ color: '#fff', background: 'none', border: 'none', cursor: 'pointer' }}>Đóng</button>
+                </div>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{browserLogs || "Đang tải hoặc không có nhật ký..."}</pre>
               </div>
             )}
 
             {showBrowser && (
-              <div className="browser-modal" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.8)', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
-                <div className="browser-toolbar" style={{ padding: '10px', backgroundColor: '#fff', display: 'flex', gap: '10px', alignItems: 'center' }}>
-                  <button onClick={extractBrowserCookies} className="save-btn">🎯 Lấy chìa khóa</button>
+              <div className="browser-modal" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.9)', zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+                <div className="browser-toolbar" style={{ padding: '10px', backgroundColor: '#fff', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button onClick={extractBrowserCookies} className="save-btn" style={{ padding: '8px 15px' }}>🎯 Lấy chìa khóa</button>
+                  <button onClick={() => { const url = browserUrl; setBrowserUrl(''); setTimeout(() => setBrowserUrl(url), 100); }} className="save-btn" style={{ backgroundColor: '#f1f5f9', color: '#475569' }}>🔄 Tải lại trang</button>
                   <button onClick={stopRemoteBrowser} className="save-btn" style={{ backgroundColor: '#fee2e2', color: '#991b1b' }}>Đóng trình duyệt</button>
                   <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    Đăng nhập xong hãy bấm "Lấy chìa khóa". <br />
-                    *Nếu màn hình trắng, hãy cho phép "Insecure content" trong cài đặt trình duyệt của trang web này.
+                    Đăng nhập Google xong hãy bấm "Lấy chìa khóa". <br />
+                    *Nếu màn hình đen lâu, hãy bấm "Tải lại trang".
                   </span>
                 </div>
-                <iframe src={browserUrl} style={{ flex: 1, border: 'none', width: '100%' }} title="Remote Browser"></iframe>
+                <div style={{ flex: 1, position: 'relative', backgroundColor: '#fff' }}>
+                  {!browserUrl && <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>Đang tải màn hình ảo...</div>}
+                  <iframe src={browserUrl} style={{ width: '100%', height: '100%', border: 'none', backgroundColor: '#fff' }} title="Remote Browser"></iframe>
+                </div>
               </div>
             )}
 

@@ -286,7 +286,15 @@ async def extract_browser_cookies(user: dict = Depends(verify_firebase_token)):
     if success:
         return {"status": "success", "message": "✅ Đã tự động cập nhật auth.json từ trình duyệt ảo!"}
     else:
-        return {"status": "error", "message": "❌ Lỗi: Không thể lấy chìa khóa. Bạn đã đăng nhập vào NotebookLM chưa?"}
+        # Get logs to help debug
+        logs = browser_manager.get_logs()
+        return {"status": "error", "message": f"❌ Lỗi: Không thể lấy chìa khóa. Bạn đã đăng nhập vào NotebookLM chưa?\n\nDebug Logs:\n{logs[-500:]}"}
+
+@app.get("/api/admin/browser/logs")
+async def get_browser_logs(user: dict = Depends(verify_firebase_token)):
+    if not user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return {"logs": browser_manager.get_logs()}
 
 @app.websocket("/api/admin/browser/ws")
 async def vnc_proxy(websocket: WebSocket, token: Optional[str] = None):
