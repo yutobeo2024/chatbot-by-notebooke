@@ -6,14 +6,38 @@ from notebooklm_mcp.api_client import NotebookLMClient, extract_cookies_from_chr
 from notebooklm_mcp.auth import load_cached_tokens
 
 def get_client():
+    # Diagnostic logging for VPS troubleshooting
+    home = os.path.expanduser("~")
+    auth_dir = os.path.join(home, ".notebooklm-mcp")
+    auth_path = os.path.join(auth_dir, "auth.json")
+    
     cookie_header = os.environ.get("NOTEBOOKLM_COOKIES", "")
     csrf_token = os.environ.get("NOTEBOOKLM_CSRF_TOKEN", "")
     session_id = os.environ.get("NOTEBOOKLM_SESSION_ID", "")
 
     if cookie_header:
         cookies = extract_cookies_from_chrome_export(cookie_header)
+        sys.stderr.write(f"[DIAG] Using environment cookies ({len(cookies)} cookies)\n")
     else:
-        cached = load_cached_tokens()
+        # Check if auth file exists
+        if not os.path.exists(auth_path):
+            sys.stderr.write(f"[DIAG] auth.json NOT FOUND at {auth_path}\n")
+            # Try a common alternative path just in case
+            alt_path = "/home/beodev/.notebooklm-mcp/auth.json"
+            if os.path.exists(alt_path):
+                 sys.stderr.write(f"[DIAG] Found auth.json at ALTERNATIVE path: {alt_path}\n")
+                 auth_path = alt_path
+
+        cached = None
+        if os.path.exists(auth_path):
+            try:
+                with open(auth_path) as f:
+                    data = json.load(f)
+                    cached = load_cached_tokens()
+                    sys.stderr.write(f"[DIAG] Loaded auth.json from {auth_path} (CSRF: {'Found' if data.get('csrf_token') else 'Missing'})\n")
+            except Exception as e:
+                sys.stderr.write(f"[DIAG] Error reading auth.json: {e}\n")
+
         if cached:
             cookies = cached.cookies
             csrf_token = csrf_token or cached.csrf_token
@@ -21,7 +45,10 @@ def get_client():
         else:
             return None
 
-    return NotebookLMClient(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    client = NotebookLMClient(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    # Manually set User-Agent to match browser extraction
+    client._PAGE_FETCH_HEADERS["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+    return client
 
 def query_notebook(notebook_id, query_text, conversation_id=None):
     client = get_client()
