@@ -55,13 +55,23 @@ class RemoteBrowserManager:
 
         xvfb_path = self._find_binary("Xvfb")
         vnc_path = self._find_binary("x11vnc")
-        browser_path = self._find_binary("chromium-browser") or self._find_binary("chromium")
+        browser_path = self._find_binary("chromium-browser") or \
+                       self._find_binary("chromium") or \
+                       self._find_binary("google-chrome")
+
+        if not xvfb_path or not vnc_path or not browser_path:
+            missing = []
+            if not xvfb_path: missing.append("Xvfb")
+            if not vnc_path: missing.append("x11vnc")
+            if not browser_path: missing.append("Chromium/Chrome")
+            sys.stderr.write(f"[{datetime.now()}] START ERROR: Missing binaries: {', '.join(missing)}\n")
+            return False
 
         # 1. Start Xvfb (Higher resolution for better experience)
         sys.stderr.write(f"[{datetime.now()}] Starting Xvfb on {self.display} (Path: {xvfb_path})...\n")
         try:
             self.xvfb_proc = subprocess.Popen([xvfb_path, self.display, "-screen", "0", "1280x1024x24"])
-            time.sleep(1.5)
+            time.sleep(2)
             if self.xvfb_proc.poll() is not None:
                 raise Exception(f"Xvfb failed to start. Return code: {self.xvfb_proc.returncode}")
         except Exception as e:
@@ -70,11 +80,11 @@ class RemoteBrowserManager:
 
         os.environ["DISPLAY"] = self.display
 
-        # 2. Start x11vnc
+        # 2. Start x11vnc (Removing -bg to keep it trackable)
         sys.stderr.write(f"[{datetime.now()}] Starting x11vnc on port {self.port_vnc}...\n")
         try:
             self.vnc_proc = subprocess.Popen([
-                vnc_path, "-display", self.display, "-nopw", "-localhost", "-rfbport", str(self.port_vnc), "-forever", "-shared", "-bg"
+                vnc_path, "-display", self.display, "-nopw", "-localhost", "-rfbport", str(self.port_vnc), "-forever", "-shared"
             ])
             time.sleep(2)
             # Check if VNC is actually listening
@@ -109,13 +119,16 @@ class RemoteBrowserManager:
                 "--disable-background-timer-throttling",
                 "--disable-backgrounding-occluded-windows",
                 "--disable-renderer-backgrounding",
-                "--proxy-server='direct://'",
-                "--proxy-bypass-list='*'",
+                # Prevent some startup prompts
+                "--no-default-browser-check",
+                "--start-maximized",
                 "https://notebooklm.google.com"
             ], stdout=log_file, stderr=log_file)
             time.sleep(3)
             if self.browser_proc.poll() is not None:
                  sys.stderr.write(f"[{datetime.now()}] Chromium failed to start or exited quickly. Check /tmp/chromium_remote.log\n")
+                 # We don't necessarily return False here as some browsers might fork 
+                 # but we've alerted the logs.
         except Exception as e:
             sys.stderr.write(f"[{datetime.now()}] Chromium Error: {str(e)}\n")
 
