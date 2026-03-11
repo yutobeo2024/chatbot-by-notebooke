@@ -266,7 +266,7 @@ class RemoteBrowserManager:
                     os.makedirs(auth_dir, exist_ok=True)
                     auth_path = os.path.join(auth_dir, "auth.json")
                     
-                    # Wrap in the format expected by AuthTokens.from_dict
+                    # Ensure exact schema match
                     auth_data = {
                         "cookies": cookies_dict,
                         "csrf_token": csrf_token,
@@ -276,9 +276,17 @@ class RemoteBrowserManager:
                     
                     with open(auth_path, "w", encoding="utf-8") as f:
                         json.dump(auth_data, f, indent=2)
+
+                    # Also write a backup to project folder for diagnostics
+                    backup_path = os.path.join(os.path.dirname(__file__), "auth_backup.json")
+                    try:
+                        with open(backup_path, "w", encoding="utf-8") as f:
+                            json.dump(auth_data, f, indent=2)
+                    except: pass
                     
-                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: SUCCESS ({len(cookies_dict)} cookies, CSRF: {'Found' if csrf_token else 'NOT FOUND'}).\n")
-                    # If CSRF is still missing, it's a "soft" failure but we save what we have
+                    sys.stderr.write(f"[{datetime.now()}] Remote Auth: SUCCESS ({len(cookies_dict)} cookies, CSRF: {'Found' if csrf_token else 'NOT FOUND', 'len=' + str(len(csrf_token))}).\n")
+                    
+                    # Return success only if we have the critical CSRF token
                     return True if csrf_token else False
                 else:
                     sys.stderr.write(f"[{datetime.now()}] Remote Auth: No cookies retrieved from browser.\n")
