@@ -14,6 +14,7 @@ def get_client():
     cookie_header = os.environ.get("NOTEBOOKLM_COOKIES", "")
     csrf_token = os.environ.get("NOTEBOOKLM_CSRF_TOKEN", "")
     session_id = os.environ.get("NOTEBOOKLM_SESSION_ID", "")
+    cookies = {}
 
     if cookie_header:
         cookies = extract_cookies_from_chrome_export(cookie_header)
@@ -28,26 +29,34 @@ def get_client():
                  sys.stderr.write(f"[DIAG] Found auth.json at ALTERNATIVE path: {alt_path}\n")
                  auth_path = alt_path
 
-        cached = None
         if os.path.exists(auth_path):
             try:
                 with open(auth_path) as f:
                     data = json.load(f)
-                    cached = load_cached_tokens()
-                    sys.stderr.write(f"[DIAG] Loaded auth.json from {auth_path} (CSRF: {'Found' if data.get('csrf_token') else 'Missing'})\n")
+                    cookies = data.get("cookies", {})
+                    csrf_token = csrf_token or data.get("csrf_token", "")
+                    session_id = session_id or data.get("session_id", "")
+                    sys.stderr.write(f"[DIAG] Loaded auth.json from {auth_path} (CSRF: {'Found' if data.get('csrf_token') else 'Missing'}, Cookies: {len(cookies)})\n")
             except Exception as e:
                 sys.stderr.write(f"[DIAG] Error reading auth.json: {e}\n")
 
-        if cached:
-            cookies = cached.cookies
-            csrf_token = csrf_token or cached.csrf_token
-            session_id = session_id or cached.session_id
-        else:
+        if not cookies:
             return None
 
+    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+
     client = NotebookLMClient(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
+    
     # Manually set User-Agent to match browser extraction
-    client._PAGE_FETCH_HEADERS["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"
+    client._PAGE_FETCH_HEADERS["User-Agent"] = UA
+    
+    # Forcefully patch the API client's underlying httpx connection headers
+    if client._client is None:
+        client._get_client() # Force initialization
+    
+    if client._client:
+        client._client.headers["User-Agent"] = UA
+        
     return client
 
 def query_notebook(notebook_id, query_text, conversation_id=None):

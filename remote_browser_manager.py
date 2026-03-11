@@ -128,7 +128,7 @@ class RemoteBrowserManager:
                 "--disable-background-timer-throttling",
                 "--disable-renderer-backgrounding",
                 "--start-maximized",
-                '--user-agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36"',
+                '--user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"',
                 "https://notebooklm.google.com"
             ], stdout=log_file, stderr=log_file)
             time.sleep(3)
