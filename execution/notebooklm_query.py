@@ -43,19 +43,42 @@ def get_client():
         if not cookies:
             return None
 
-    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-
     client = NotebookLMClient(cookies=cookies, csrf_token=csrf_token, session_id=session_id)
     
-    # Manually set User-Agent to match browser extraction
-    client._PAGE_FETCH_HEADERS["User-Agent"] = UA
+    UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     
-    # Forcefully patch the API client's underlying httpx connection headers
-    if client._client is None:
-        client._get_client() # Force initialization
+    # 1. Patch the page fetch headers for refresh
+    client._PAGE_FETCH_HEADERS.update({
+        "User-Agent": UA,
+        "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+        "sec-ch-ua-platform": '"Windows"'
+    })
     
-    if client._client:
-        client._client.headers["User-Agent"] = UA
+    # 2. Monkey-patch the httpx client builder to use Windows headers
+    import httpx
+    def patched_get_client():
+        if client._client is None:
+            cookie_str = "; ".join(f"{k}={v}" for k, v in client.cookies.items())
+            client._client = httpx.Client(
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                    "Origin": client.BASE_URL,
+                    "Referer": f"{client.BASE_URL}/",
+                    "Cookie": cookie_str,
+                    "X-Same-Domain": "1",
+                    "User-Agent": UA,
+                    "sec-ch-ua": '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+                    "sec-ch-ua-mobile": "?0",
+                    "sec-ch-ua-platform": '"Windows"'
+                },
+                timeout=30.0,
+            )
+        return client._client
+        
+    client._get_client = patched_get_client
+    
+    # 3. Force initialize httpx client with new patched headers
+    client._get_client()
         
     return client
 
