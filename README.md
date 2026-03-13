@@ -1,83 +1,59 @@
-# NotebookLM MCP Server for Antigravity
+# Clinic Assistant (Y DƯƠC SÀI GÒN) - NotebookLM Powered
 
-This repository contains the configuration and workflows to set up the **NotebookLM MCP Server** for use with **Antigravity**, **Opencode** (and other MCP clients).
+Ứng dụng trợ lý y khoa chuyên nghiệp dựa trên tích hợp NotebookLM, được thiết kế cho **Phòng khám Y Dược Sài Gòn**.
 
-It specifically addresses and fixes the "invalid trailing data" error caused by the startup banner of the `notebooklm-mcp-server` package.
+## 🚀 Tính năng nổi bật
 
-## Features
+- **Đa chuyên khoa**: Mỗi khoa lâm sàng (Nội, Ngoại, Sản, Nha...) được vận hành bởi một Notebook riêng biệt.
+- **Session Memory**: Ghi nhớ ngữ cảnh hội thoại, cho phép hỏi đáp liên tục một cách tự nhiên.
+- **Medical UI**: Giao diện React hiện đại, tối ưu cho lĩnh vực y tế với hiệu ứng gõ chữ thời gian thực.
+- **Admin Dashboard**: Quản lý Notebook IDs, Whitelist người dùng và xác thực NotebookLM trực tiếp từ web.
+- **Bảo mật**: Tích hợp Firebase Auth và cơ chế thắt chặt CORS.
 
-- **Automated Setup Workflow**: A comprehensive workflow (`.agent/workflows/setup-notebooklm-mcp.md`) to install and configure the server.
-- **Banner Suppression Fix**: Includes a wrapper script (`run_mcp.py`) that filters out the ASCII art banner from `stdout`, ensuring clean JSON-RPC communication.
-- **Antigravity Integration**: Ready-to-use configuration for Antigravity's `mcp_config.json`.
+## 🛠️ Cài đặt & Thiết lập
 
-## Prerequisites
+### 1. Yêu cầu hệ thống
+- Python 3.10+ & Node.js 18+
+- Tài khoản Google có quyền truy cập NotebookLM.
+- Firebase Project (cho Auth).
 
-- Python 3.10+
-- `pip`
-- An active Google account with access to [NotebookLM](https://notebooklm.google.com/)
+### 2. Cài đặt Backend
+```bash
+pip install -r requirements.txt
+# Copy file ví dụ cấu hình
+cp .env.example .env
+# Chỉnh sửa .env với thông tin của bạn (ADMIN_EMAIL, ALLOWED_ORIGINS)
+```
 
-## Installation
+### 3. Cài đặt Frontend
+```bash
+cd frontend
+npm install
+# Cấu hình VITE_API_URL trong .env
+npm run dev
+```
 
-You can use the provided workflow in Antigravity or follow these manual steps:
+### 4. Xác thực NotebookLM
+Chạy lệnh xác thực lần đầu trên máy tính cá nhân để lấy `auth.json`:
+```bash
+notebooklm-mcp-auth
+```
+Sau đó upload file `auth.json` qua giao diện **Admin Dashboard**.
 
-1.  **Install the package**:
-    ```bash
-    pip install notebooklm-mcp-server
-    ```
+## 📂 Cấu trúc dự án
 
-2.  **Clone this repository** (or copy the files) to your desired location (e.g., `d:\antigravity\notebooklm`).
+- `backend_server.py`: FastAPI backend quản lý module và proxy requests.
+- `frontend/`: Ứng dụng React + Vite.
+- `execution/`: Chứa logic truy vấn NotebookLM.
+- `modules_config.json`: Cấu hình động cho các chuyên khoa.
 
-3.  **Authenticate**:
-    ```bash
-    notebooklm-mcp-auth
-    ```
-    Follow the browser prompts to log in.
+## 🔐 Bảo mật (Audit)
+Dự án đã qua kiểm tra (Audit) và triển khai các biện pháp bảo mật:
+- Chặn Bypass Auth khi thiếu SDK.
+- Giới hạn Origins gọi API.
+- Quản lý secrets qua biến môi trường.
 
-4.  **Configure Antigravity**:
-    Add the following to your `C:\Users\Administrator\.gemini\antigravity\mcp_config.json`:
-
-    ```json
-    {
-      "mcpServers": {
-        "notebooklm-mcp-server": {
-          "command": "python",
-          "args": [
-            "-u",
-            "-W",
-            "ignore",
-            "d:\\antigravity\\notebooklm\\run_mcp.py"
-          ],
-          "env": {
-            "PYTHONUNBUFFERED": "1",
-            "PYTHONWARNINGS": "ignore"
-          }
-        }
-      }
-    }
-    ```
-    *Note: Adjust the path to `run_mcp.py` if you placed it elsewhere.*
-
-5.  **Reload Antigravity**:
-    Restart the application or reload the window (`Ctrl+Shift+P` -> `Developer: Reload Window`).
-
-## Usage
-
-Once configured, you can use Antigravity to interact with your NotebookLM notebooks.
-
-- **List Notebooks**: Ask "List my notebooks"
-- **Query Notebooks**: Ask questions about your documents.
-- **Add Sources**: Add URLs or text to your notebooks.
-
-## Troubleshooting
-
-### "Invalid trailing data" Error
-This error occurs when the server prints non-JSON text (like a banner) to `stdout`. The included `run_mcp.py` script fixes this by intercepting `stdout` and removing the banner. Ensure your config points to this script, not the module directly.
-
-### Authentication Issues
-If you see auth errors, try running `notebooklm-mcp-auth` again and ensure you complete the login process in the browser.
-
-## Files
-
-- `run_mcp.py`: Wrapper script to suppress the startup banner.
-- `.agent/workflows/setup-notebooklm-mcp.md`: Antigravity workflow for automated setup.
-- `list_notebooks.py`: Utility script to list notebooks (for testing).
+## 📄 Tài liệu hướng dẫn
+- [TUTORIAL_CloudflareTunnel.md](./TUTORIAL_CloudflareTunnel.md)
+- [TUTORIAL_Reauth_NotebookLM.md](./TUTORIAL_Reauth_NotebookLM.md)
+- [TUTORIAL_VPS_Cloudflare_SCP.md](./TUTORIAL_VPS_Cloudflare_SCP.md)

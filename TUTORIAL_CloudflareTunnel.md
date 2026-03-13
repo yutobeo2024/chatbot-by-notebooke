@@ -137,11 +137,20 @@ Sau bước này, cả **FastAPI Backend** (service `chatbot`) và **Cloudflare 
 
 ---
 
-## Bước 6: Cập nhật Netlify
+## Bước 6: Cập nhật Cấu hình & Netlify
 
+### 6a. Cấu hình bảo mật Backend (QUAN TRỌNG)
+
+Khi bạn dùng domain riêng (`api.yourdomain.com`), bạn cần báo cho Backend biết để nó không chặn yêu cầu từ domain này:
+1. Mở file `.env` trên VPS: `nano ~/chatbot-by-notebooke-master/.env`
+2. Thêm hoặc sửa dòng sau:
+   `ALLOWED_ORIGINS=https://ydsg-chatbot.netlify.app,https://api.yourdomain.com`
+3. Lưu và khởi động lại Backend: `sudo systemctl restart chatbot`
+
+### 6b. Cập nhật Netlify
 1. Vào Netlify Dashboard → **Project configuration** → **Environment variables**
 2. Sửa biến `VITE_API_URL`:
-   - **Value:** `https://api.yourdomain.com` _(thay bằng domain thật của bạn)_
+   - **Value:** `https://api.yourdomain.com`
 3. Vào **Deploys** → **Trigger deploy** → **Clear cache and deploy site**
 
 Sau khi deploy xong, giao diện Web `ydsg-chatbot.netlify.app` kết nối hoàn toàn qua HTTPS!

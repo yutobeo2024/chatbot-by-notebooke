@@ -14,12 +14,16 @@ from datetime import datetime
 from execution.notebooklm_query import get_client
 from remote_browser_manager import RemoteBrowserManager
 
+# Environment variables
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "yduoc407@gmail.com")
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+
 app = FastAPI(title="Clinic Assistant API")
 
 # Enable CORS for frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -35,7 +39,6 @@ else:
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "modules_config.json")
 WHITELIST_PATH = os.path.join(os.path.dirname(__file__), "whitelist.json")
-ADMIN_EMAIL = "yduoc407@gmail.com"
 EXECUTION_SCRIPT = os.path.join(os.path.dirname(__file__), "execution", "notebooklm_query.py")
 
 class ChatRequest(BaseModel):
@@ -65,9 +68,9 @@ async def verify_firebase_token(authorization: Optional[str] = Header(None)):
                 "is_admin": decoded_token.get("email") == ADMIN_EMAIL
             }
         else:
-            # Fallback for local testing if SDK is still missing
-            return {"uid": "local_test_user", "email": "admin@localhost", "is_admin": "admin@localhost" == ADMIN_EMAIL}
+            raise HTTPException(status_code=500, detail="Firebase Admin SDK not initialized. Authentication unavailable.")
     except Exception as e:
+        if isinstance(e, HTTPException): raise e
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 def load_config():

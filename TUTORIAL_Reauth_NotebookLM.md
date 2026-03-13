@@ -16,7 +16,11 @@ Khi Token hết hạn, bất kỳ câu hỏi nào gửi từ Chatbot lên Notebo
 Người quản trị phải mở màn hình đen (Terminal/Command Prompt) và gõ lệnh `notebooklm-mcp-auth`. Lệnh này là một script Python có nhiệm vụ mở Chrome lên, tự động trích xuất Token mới nhất và lưu đè vào file cấu hình.
 
 **Nhu cầu:**
-Thao tác thủ công quá phức tạp với người dùng không chuyên. Chúng ta cần một nút bấm "Kết nối lại" ngay trên giao diện Web Admin.
+Thao tác thủ công quá phức tạp với người dùng không chuyên. Chúng ta cần một nút bấm "Kết nối lại" và một màn hình theo dõi trực quan ngay trên giao diện Web Admin.
+
+**Cải tiến mới (V2.1.0):**
+- Đã thêm thanh trạng thái: **"Trạng thái Auth: ✅ Đã có / ❌ Chưa có"**.
+- Đã thêm nút **"🔐 Đăng nhập từ xa"**: Mở trình duyệt ảo ngay trên web để đăng nhập Google nếu token hết hạn.
 
 ---
 
@@ -92,6 +96,7 @@ const handleReauth = async () => {
 ```
 
 **2.3 Gắn Hàm Vào Nút Bấm Trong HTML (JSX)**
+Bây giờ, thay vì code nằm trực tiếp trong `App.jsx`, chúng ta đã tách nó ra để dễ quản lý hơn. Tuy nhiên logic sử dụng vẫn tương tự:
 ```jsx
 <button 
   onClick={handleReauth} 

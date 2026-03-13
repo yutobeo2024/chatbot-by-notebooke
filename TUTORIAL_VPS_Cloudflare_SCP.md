@@ -169,18 +169,18 @@ Nếu bạn SSH vào VPS rồi chạy SCP trong đó, tức là bạn đang nói
 
 ## Tóm tắt quy trình
 
-```
 [Mua Domain] → [Thêm vào Cloudflare] → [Thay Nameserver tại iNET]
       ↓
 [Chờ Cloudflare Active]
       ↓
-[SSH vào VPS] → [Tạo Tunnel] → [Config] → [Chạy Service]
+[SSH vào VPS] → [Tạo Tunnel] → [Cài đặt Biến môi trường .env]
+      ↓
+[Chạy Service Cloudflare & Backend]
       ↓
 [Thêm CNAME trên Cloudflare Dashboard]
       ↓
 [Cập nhật VITE_API_URL trên Netlify] → [Deploy lại]
       ↓
-[Copy auth.json từ Windows lên VPS bằng Web Upload hoặc SCP]
+[Sử dụng Admin Dashboard trên Web để Login Google hoặc Upload auth.json]
       ↓
 ✅ HỆ THỐNG HOÀN CHỈNH!
-```

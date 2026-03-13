@@ -11,14 +11,17 @@ This project transforms a standard NotebookLM integration into a professional me
 - **Admin Dashboard**: A secure interface (Firebase Auth) to manage Notebook IDs without editing code.
 
 ## Current Status
-- **Version 2.0.0 Release**: Stable V1 architecture + Session Memory.
-- **Session Memory**: Backend manages `conversation_id`, allowing follow-up questions (e.g., "How much is it?" after asking about a service).
+- **Version 2.1.0 Release**: Security Hardening + Frontend Modularization.
+- **Session Memory**: Backend manages `conversation_id`, allowing follow-up questions.
+- **Security Hardening**: Strict CORS policies and removal of auth bypass for production safety.
+- **Modular Frontend**: Extracted reusable components (e.g., `TypingEffect`) and centralized configuration.
 - Full medical theme implemented with smooth animations.
 - Admin portal fully functional for live configuration updates.
 - Firebase Authentication integrated for secure admin access.
 - **Performance**: Uses isolated subprocess execution (stable) with context persistence.
 
 ## Technical Configuration
-- **Backend Port**: 8000
-- **Frontend Port**: 5173
-- **Authentication**: Uses `notebooklm-mcp-auth` for session management and Firebase for Admin UI.
+- **Backend Port**: 8042 (FastAPI)
+- **Frontend Port**: 5173 (Vite)
+- **Environment**: Uses `.env` for secrets (Admin Email, Allowed Origins). See `.env.example`.
+- **Authentication**: Firebase Auth for Admin/Users & Session-based Auth for NotebookLM.
