@@ -6,3 +6,4 @@ requests>=2.31.0
 playwright
 notebooklm-mcp-server
 python-multipart
+python-dotenv

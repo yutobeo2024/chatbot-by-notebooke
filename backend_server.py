@@ -1,5 +1,8 @@
 import os
 import json
+from dotenv import load_dotenv
+load_dotenv()  # Load variables from .env if it exists
+
 import sys
 from fastapi import FastAPI, HTTPException, Depends, Header, UploadFile, File, WebSocket, WebSocketDisconnect, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
